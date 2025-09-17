@@ -1,0 +1,180 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String     @id @default(uuid()) @db.Uuid
+  name           String
+  email          String     @unique
+  password       String
+  role           Role       @default(APPLICANT)
+  phoneNumber    String?
+  profilePicture String     @default("https://icon-library.com/images/anonymous-avatar-icon/anonymous-avatar-icon-25.jp")
+  isActive       Boolean    @default(false)
+  lastLogin      DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  applicant      Applicant?
+  recruiter      Recruiter?
+}
+
+model Applicant {
+  id                  String         @id @default(uuid())
+  user                User           @relation(fields: [userId], references: [id])
+  userId              String         @unique @db.Uuid
+  bio                 String?
+  resumeUrl           String?
+  location            String?
+  yearsOfExperience   Int?
+  achievements        String?
+  skills              String[]
+  education           Education[]
+  experience          Experience[]
+  availability        Availability?
+  preferredRole       PreferredRole?
+  preferredLocations  String[]
+  isWillingToRelocate Boolean?
+  isProfileComplete   Boolean        @default(false)
+
+  gender   Gender?
+  pronouns Pronouns?
+  race     Race?
+
+  currentSalary  Decimal? @db.Decimal(10, 2)
+  expectedSalary Decimal? @db.Decimal(10, 2)
+
+  // socials
+  linkedInUrl  String?
+  portfolioUrl String?
+  githubUrl    String?
+  twitterUrl   String?
+}
+
+model Recruiter {
+  id            String  @id @default(uuid()) @db.Uuid
+  user          User    @relation(fields: [userId], references: [id])
+  userId        String  @unique @db.Uuid
+  positionTitle String?
+  bio           String?
+  location      String?
+  linkdedinUrl  String?
+  department    String?
+  company       Company @relation(fields: [companyId], references: [id])
+  companyId     String  @db.Uuid
+}
+
+model Education {
+  id           String    @id @default(uuid())
+  applicant    Applicant @relation(fields: [applicantId], references: [id])
+  applicantId  String
+  schoolName   String
+  degree       String
+  fieldOfStudy String
+  startDate    DateTime
+  endDate      DateTime?
+  grade        String?
+  description  String?
+}
+
+model Experience {
+  id          String    @id @default(uuid())
+  applicant   Applicant @relation(fields: [applicantId], references: [id])
+  applicantId String
+  jobTitle    String
+  companyName String
+  startDate   DateTime
+  endDate     DateTime?
+  location    String?
+  description String?
+}
+
+model Company {
+  id           String       @id @default(uuid()) @db.Uuid
+  name         String
+  logoUrl      String?
+  website      String?
+  industry     String?
+  companySize  CompanySize?
+  headquarters String?
+  foundedYear  Int?
+  description  String?
+
+  recruiters Recruiter[]
+}
+
+// ----------- ENUMS ----------- 
+
+enum Role {
+  RECRUITER
+  APPLICANT
+}
+
+enum PreferredRole {
+  FULL_TIME
+  PART_TIME
+  INTERN
+  CONTRACT
+  FREELANCE
+  TEMPORARY
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+  OTHER
+}
+
+enum Pronouns {
+  HE_HIM
+  SHE_HER
+  THEY_THEM
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum Race {
+  ASIAN
+  BLACK_OR_AFRICAN_AMERICAN
+  HISPANIC_OR_LATINO
+  NATIVE_AMERICAN
+  WHITE
+  MIDDLE_EASTERN
+  PACIFIC_ISLANDER
+  MIXED
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum Availability {
+  IMMEDIATELY
+  ONE_WEEK
+  TWO_WEEKS
+  ONE_MONTH
+  FLEXIBLE
+}
+
+enum CompanySize {
+  SELF_EMPLOYED // 1 person
+  SIZE_2_10 // 2–10 employees
+  SIZE_11_50 // 11–50 employees
+  SIZE_51_200 // 51–200 employees
+  SIZE_201_500 // 201–500 employees
+  SIZE_501_1000 // 501–1000 employees
+  SIZE_1001_5000 // 1001–5000 employees
+  SIZE_5001_10000 // 5001–10,000 employees
+  SIZE_10000_PLUS // 10,000+ employees
+}
