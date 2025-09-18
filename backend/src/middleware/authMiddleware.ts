@@ -1,9 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { Role } from "../generated/prisma";
 
-async function authMiddleware(req: Request, res: Response, next: NextFunction){
-    
+function authMiddleware(req: Request, res: Response, next: NextFunction){    
     try {
         const token = req.cookies.token
     
