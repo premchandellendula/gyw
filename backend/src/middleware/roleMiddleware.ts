@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { Role } from "../generated/prisma";
 
-async function roleMiddleware(role: Role){
+function roleMiddleware(role: Role){
     return (req: Request, res: Response, next: NextFunction) => {
         try {
             const token = req.cookies.token;
