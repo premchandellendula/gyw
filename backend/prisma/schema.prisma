@@ -31,7 +31,7 @@ model User {
 }
 
 model Applicant {
-  id                  String         @id @default(uuid())
+  id                  String         @id @default(uuid()) @db.Uuid
   user                User           @relation(fields: [userId], references: [id])
   userId              String         @unique @db.Uuid
   bio                 String?
@@ -60,6 +60,9 @@ model Applicant {
   portfolioUrl String?
   githubUrl    String?
   twitterUrl   String?
+  applications Application[]
+  hiddenJobs   HiddenJob[]
+  savedJobs    SavedJob[]
 }
 
 model Recruiter {
@@ -72,12 +75,13 @@ model Recruiter {
   linkdedinUrl       String?
   department         String?
   recruiterCompanies RecruiterCompany[]
+  jobs               Job[]
 }
 
 model Education {
   id           String    @id @default(uuid())
   applicant    Applicant @relation(fields: [applicantId], references: [id])
-  applicantId  String
+  applicantId  String    @db.Uuid
   schoolName   String
   degree       String
   fieldOfStudy String
@@ -90,7 +94,7 @@ model Education {
 model Experience {
   id          String    @id @default(uuid())
   applicant   Applicant @relation(fields: [applicantId], references: [id])
-  applicantId String
+  applicantId String    @db.Uuid
   jobTitle    String
   companyName String
   startDate   DateTime
@@ -109,8 +113,10 @@ model Company {
   headquarters String?
   foundedYear  Int?
   description  String?
+  companyType  CompanyType?
 
   companyRecruiters RecruiterCompany[]
+  jobs              Job[]
 }
 
 model RecruiterCompany {
@@ -126,6 +132,83 @@ model RecruiterCompany {
   leftAt    DateTime?
 
   @@unique([recruiterId, companyId])
+}
+
+model Job {
+  id                   String         @id @default(uuid()) @db.Uuid
+  title                String
+  description          String
+  skills               String[]
+  role                 JobRole
+  location             String
+  ctcType              CTCType        @default(RANGE)
+  minCTC               Float?
+  maxCTC               Float?
+  currency             Currency       @default(INR)
+  minExperience        Float
+  maxExperience        Float
+  employmentType       EmploymentType
+  jobType              JobType
+  department           Department
+  openings             Int
+  relocationAssistance Boolean        @default(false)
+  visaSponsorship      Boolean        @default(false)
+  noticePeriod         NoticePeriod?
+  durationInMonths     Int?
+  benefits             String[]
+  applicationDeadline  DateTime?
+  companyId            String         @db.Uuid
+  company              Company        @relation(fields: [companyId], references: [id])
+  recruiterId          String         @db.Uuid
+  recruiter            Recruiter      @relation(fields: [recruiterId], references: [id])
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  applications Application[]
+  hiddenJobs   HiddenJob[]
+  savedJobs    SavedJob[]
+}
+
+model Application {
+  id          String    @id @default(uuid()) @db.Uuid
+  applicant   Applicant @relation(fields: [applicantId], references: [id])
+  applicantId String    @db.Uuid
+  job         Job       @relation(fields: [jobId], references: [id])
+  jobId       String    @db.Uuid
+
+  status       ApplicationStatus @default(PENDING)
+  resume       String?
+  coverLetter  String?
+  portfolioUrl String?
+  appliedAt    DateTime          @default(now())
+  eviewedAt    DateTime?
+  rejectedAt   DateTime?
+  acceptedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([applicantId, jobId])
+}
+
+model HiddenJob {
+  id          String    @id @default(uuid()) @db.Uuid
+  applicantId String    @db.Uuid
+  applicant   Applicant @relation(fields: [applicantId], references: [id])
+  jobId       String    @db.Uuid
+  job         Job       @relation(fields: [jobId], references: [id])
+
+  @@unique([applicantId, jobId])
+}
+
+model SavedJob {
+  id          String    @id @default(uuid()) @db.Uuid
+  applicantId String    @db.Uuid
+  applicant   Applicant @relation(fields: [applicantId], references: [id])
+  jobId       String    @db.Uuid
+  job         Job       @relation(fields: [jobId], references: [id])
+
+  @@unique([applicantId, jobId])
 }
 
 // ----------- ENUMS ----------- 
@@ -191,4 +274,115 @@ enum CompanySize {
   SIZE_1001_5000 // 1001–5000 employees
   SIZE_5001_10000 // 5001–10,000 employees
   SIZE_10000_PLUS // 10,000+ employees
+}
+
+enum Currency {
+  INR
+  USD
+  EUR
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+}
+
+enum JobType {
+  ONSITE
+  REMOTE
+  HYBRID
+}
+
+enum NoticePeriod {
+  IMMEDIATE
+  WITHIN_15_DAYS
+  WITHIN_30_DAYS
+  FLEXIBLE
+}
+
+enum CompanyType {
+  EARLY_STAGE_STARTUP
+  GROWTH_STAGE_STARTUP
+  UNICORN
+  PUBLIC
+  MNC
+  NON_PROFIT
+}
+
+enum CTCType {
+  RANGE
+  COMPETITIVE
+  UNDISCLOSED
+}
+
+enum ApplicationStatus {
+  PENDING
+  REVIEWED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum JobRole {
+  FRONTEND_DEVELOPER
+  BACKEND_DEVELOPER
+  FULLSTACK_DEVELOPER
+  MOBILE_DEVELOPER
+  DEVOPS_ENGINEER
+  QA_ENGINEER
+  TEST_AUTOMATION_ENGINEER
+  DATA_SCIENTIST
+  DATA_ENGINEER
+  MACHINE_LEARNING_ENGINEER
+  SOFTWARE_ENGINEER
+  SITE_RELIABILITY_ENGINEER
+  SYSTEMS_ENGINEER
+  SECURITY_ENGINEER
+  CLOUD_ENGINEER
+  PRODUCT_MANAGER
+  TECHNICAL_PROJECT_MANAGER
+  BUSINESS_ANALYST
+  UI_UX_DESIGNER
+  FRONTEND_ARCHITECT
+  BACKEND_ARCHITECT
+  SOFTWARE_ARCHITECT
+  SCRUM_MASTER
+  DATABASE_ADMINISTRATOR
+  EMBEDDED_SOFTWARE_ENGINEER
+  GAME_DEVELOPER
+  HARDWARE_ENGINEER
+  TECHNICAL_WRITER
+  SUPPORT_ENGINEER
+  ANALYTICS_ENGINEER
+  FRONTEND_ENGINEER
+  BACKEND_ENGINEER
+  SOFTWARE_DEVELOPER
+  MOBILE_APP_DEVELOPER
+  NETWORK_ENGINEER
+  DEVSECOPS_ENGINEER
+  CLOUD_SOLUTION_ARCHITECT
+  AI_ENGINEER
+  NLP_ENGINEER
+}
+
+enum Department {
+  ENGINEERING
+  PRODUCT
+  DESIGN
+  MARKETING
+  SALES
+  HUMAN_RESOURCES
+  FINANCE
+  CUSTOMER_SUPPORT
+  OPERATIONS
+  LEGAL
+  IT
+  QUALITY_ASSURANCE
+  DATA_SCIENCE
+  RESEARCH_AND_DEVELOPMENT
+  BUSINESS_DEVELOPMENT
+  ADMINISTRATION
+  SECURITY
 }

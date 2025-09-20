@@ -1,0 +1,34 @@
+/*
+  Warnings:
+
+  - Added the required column `department` to the `Job` table without a default value. This is not possible if the table is not empty.
+  - Added the required column `role` to the `Job` table without a default value. This is not possible if the table is not empty.
+
+*/
+-- CreateEnum
+CREATE TYPE "public"."JobRole" AS ENUM ('FRONTEND_DEVELOPER', 'BACKEND_DEVELOPER', 'FULLSTACK_DEVELOPER', 'MOBILE_DEVELOPER', 'DEVOPS_ENGINEER', 'QA_ENGINEER', 'TEST_AUTOMATION_ENGINEER', 'DATA_SCIENTIST', 'DATA_ENGINEER', 'MACHINE_LEARNING_ENGINEER', 'SOFTWARE_ENGINEER', 'SITE_RELIABILITY_ENGINEER', 'SYSTEMS_ENGINEER', 'SECURITY_ENGINEER', 'CLOUD_ENGINEER', 'PRODUCT_MANAGER', 'TECHNICAL_PROJECT_MANAGER', 'BUSINESS_ANALYST', 'UI_UX_DESIGNER', 'FRONTEND_ARCHITECT', 'BACKEND_ARCHITECT', 'SOFTWARE_ARCHITECT', 'SCRUM_MASTER', 'DATABASE_ADMINISTRATOR', 'EMBEDDED_SOFTWARE_ENGINEER', 'GAME_DEVELOPER', 'HARDWARE_ENGINEER', 'TECHNICAL_WRITER', 'SUPPORT_ENGINEER', 'ANALYTICS_ENGINEER', 'FRONTEND_ENGINEER', 'BACKEND_ENGINEER', 'SOFTWARE_DEVELOPER', 'MOBILE_APP_DEVELOPER', 'NETWORK_ENGINEER', 'DEVSECOPS_ENGINEER', 'CLOUD_SOLUTION_ARCHITECT', 'AI_ENGINEER', 'NLP_ENGINEER');
+
+-- CreateEnum
+CREATE TYPE "public"."Department" AS ENUM ('ENGINEERING', 'PRODUCT', 'DESIGN', 'MARKETING', 'SALES', 'HUMAN_RESOURCES', 'FINANCE', 'CUSTOMER_SUPPORT', 'OPERATIONS', 'LEGAL', 'IT', 'QUALITY_ASSURANCE', 'DATA_SCIENCE', 'RESEARCH_AND_DEVELOPMENT', 'BUSINESS_DEVELOPMENT', 'ADMINISTRATION', 'SECURITY');
+
+-- AlterTable
+ALTER TABLE "public"."Job" ADD COLUMN     "department" "public"."Department" NOT NULL,
+ADD COLUMN     "role" "public"."Role" NOT NULL;
+
+-- CreateTable
+CREATE TABLE "public"."HiddenJob" (
+    "id" UUID NOT NULL,
+    "applicantId" UUID NOT NULL,
+    "jobId" UUID NOT NULL,
+
+    CONSTRAINT "HiddenJob_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "HiddenJob_applicantId_jobId_key" ON "public"."HiddenJob"("applicantId", "jobId");
+
+-- AddForeignKey
+ALTER TABLE "public"."HiddenJob" ADD CONSTRAINT "HiddenJob_applicantId_fkey" FOREIGN KEY ("applicantId") REFERENCES "public"."Applicant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."HiddenJob" ADD CONSTRAINT "HiddenJob_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "public"."Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
