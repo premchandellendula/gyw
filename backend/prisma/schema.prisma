@@ -207,6 +207,7 @@ model SavedJob {
   applicant   Applicant @relation(fields: [applicantId], references: [id])
   jobId       String    @db.Uuid
   job         Job       @relation(fields: [jobId], references: [id])
+  createdAt   DateTime  @default(now())
 
   @@unique([applicantId, jobId])
 }
