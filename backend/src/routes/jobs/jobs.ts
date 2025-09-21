@@ -561,7 +561,7 @@ router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, r
             }
         })
 
-        if(!applicantId){
+        if(!applicant){
             return res.status(404).json({ message: "Applicant profile not found" })
         }
 
@@ -609,4 +609,160 @@ router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, r
     }
 })
 
+// ------ Saved ------
+
+router.post('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
+    const applicantId = req.user?.userId;
+    if(!applicantId){
+        return res.status(401).json({ message: "Unauthorized" })
+    }
+
+    const { jobId } = req.params;
+
+    try {
+        const job = await prisma.job.findUnique({
+            where: {
+                id: jobId
+            }
+        })
+
+        if(!job){
+            return res.status(404).json({message: "Job not found"})
+        }
+
+        const alreadySaved = await prisma.savedJob.findFirst({
+            where: {
+                jobId,
+                applicantId
+            }
+        })
+
+        if (alreadySaved) {
+            return res.status(409).json({
+                message: "You have already saved this job."
+            });
+        }
+
+        const savedJob = await prisma.savedJob.create({
+            data: {
+                jobId,
+                applicantId
+            }
+        })
+
+        return res.status(201).json({
+            message: "Job saved successfully",
+            job: savedJob
+        })
+    } catch(err) {
+        console.error(`Error saving job [jobId=${jobId}, applicantId=${applicantId}]:`, err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err instanceof Error ? err.message : "Unknown error"
+        })
+    }
+})
+
+router.delete('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
+    const applicantId = req.user?.userId;
+    if(!applicantId){
+        return res.status(401).json({ message: "Unauthorized" })
+    }
+
+    const { jobId } = req.params;
+
+    try {
+        const job = await prisma.job.findUnique({
+            where: {
+                id: jobId
+            }
+        })
+
+        if(!job){
+            return res.status(404).json({message: "Job not found"})
+        }
+
+        const savedJob = await prisma.savedJob.findFirst({
+            where: { jobId, applicantId }
+        });
+
+        if (!savedJob) {
+            return res.status(404).json({
+                message: "Saved job not found."
+            });
+        }
+
+        const deletedJob = await prisma.savedJob.delete({
+            where: {
+                applicantId_jobId: {
+                    applicantId: applicantId,
+                    jobId
+                }
+            }
+        })
+
+        return res.status(200).json({
+            message: "Saved job removed successfully",
+            job: deletedJob
+        })
+    } catch(err) {
+        console.error(`Error removing the job from saved [jobId=${jobId}, applicantId=${applicantId}]:`, err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err instanceof Error ? err.message : "Unknown error"
+        })
+    }
+})
+
+router.get('/saved', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
+    const applicantId = req.user?.userId;
+    if(!applicantId){
+        return res.status(401).json({ message: "Unauthorized" })
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const order = (req.query.order as string)?.toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const skip = (page - 1) * limit;
+    try {
+        const totalCount = await prisma.savedJob.count({
+            where: { applicantId }
+        });
+        const savedJobs = await prisma.savedJob.findMany({
+            where: {
+                applicantId
+            },
+            include: {
+                job: {
+                    include: {
+                        company: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: order
+            },
+            skip,
+            take: limit
+        })
+        
+        return res.status(200).json({
+            message: "Saved jobs fetched successfully",
+            data: savedJobs,
+            pagination: {
+                total: totalCount,
+                page,
+                limit,
+                totalPages: Math.ceil(totalCount / limit),
+                order
+            }
+        })
+    } catch(err) {
+        console.error(`Error fetching saved jobs, applicantId=${applicantId}]:`, err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err instanceof Error ? err.message : "Unknown error"
+        })
+    }
+})
 export default router;
