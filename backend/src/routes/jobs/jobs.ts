@@ -6,7 +6,6 @@ import { PrismaClient } from "../../generated/prisma";
 import { DepartmentEnum, JobRolEnum } from "../../types/types";
 const prisma = new PrismaClient();
 
-
 // ─────────────────────────────
 //     RECRUITER JOB ROUTES
 // ─────────────────────────────
@@ -245,6 +244,167 @@ router.delete('/:jobId', roleMiddleware("RECRUITER"), async (req: Request, res: 
         console.error("Error deleting job:", err);
         return res.status(500).json({
             message: "Error deleting the job",
+            error: err instanceof Error ? err.message : "Unknown error"
+        })
+    }
+})
+
+router.get('/:jobId/dashboard', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
+    const recruiterId = req.user?.userId;
+    if(!recruiterId){
+        return res.status(401).json({ message: "Unauthorized" })
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const { jobId } = req.params;
+    try {
+        const job = await prisma.job.findUnique({
+            where: { id: jobId },
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                createdAt: true,
+                company: true,
+                recruiterId: true,
+            }
+        });
+
+        if (!job) {
+            return res.status(404).json({ message: "Job not found" });
+        }
+
+        if (job.recruiterId !== recruiterId) {
+            return res.status(403).json({ message: "Forbidden: You can only view your own jobs." });
+        }
+
+        const applicationStats = await prisma.application.groupBy({
+            by: ['status'],
+            where: { jobId },
+            _count: {
+                status: true
+            }
+        });
+
+        const stats = applicationStats.reduce((acc, stat) => {
+            acc[stat.status] = stat._count.status;
+            return acc;
+        }, {} as Record<string, number>);
+
+        const applications = await prisma.application.findMany({
+            where: { jobId },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+            include: {
+                applicant: {
+                    select: {
+                        id: true,
+                        user: {
+                            select: {
+                                name: true,
+                                email: true
+                            }
+                        },
+                        resumeUrl: true,
+                    }
+                }
+            }
+        });
+        const totalApplications = await prisma.application.count({ where: { jobId } });
+
+        return res.status(200).json({
+            message: "Job dashboard fetched successfully",
+            job,
+            stats,
+            applications,
+            pagination: {
+                page,
+                limit,
+                total: totalApplications,
+                totalPages: Math.ceil(totalApplications / limit),
+            }
+        });
+    } catch(err) {
+        console.error(`Error fetching the full details of jobId:${jobId}`, err instanceof Error ? err.message : err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err instanceof Error ? err.message : "Unknown error"
+        })
+    }
+})
+
+router.get('/:jobId/applications', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
+    const recruiterId = req.user?.userId;
+    if(!recruiterId){
+        return res.status(401).json({ message: "Unauthorized" })
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const { jobId } = req.params;
+
+    try {
+        const job = await prisma.job.findUnique({
+            where: { id: jobId },
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                createdAt: true,
+                company: true,
+                recruiterId: true,
+            }
+        });
+
+        if (!job) {
+            return res.status(404).json({ message: "Job not found" });
+        }
+
+        if (job.recruiterId !== recruiterId) {
+            return res.status(403).json({ message: "Forbidden: You can only view your own jobs." });
+        }
+
+        const applications = await prisma.application.findMany({
+            where: { jobId },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+            include: {
+                applicant: {
+                    select: {
+                        id: true,
+                        user: {
+                            select: {
+                                name: true,
+                                email: true
+                            }
+                        },
+                        resumeUrl: true,
+                    }
+                }
+            }
+        });
+        const totalApplications = await prisma.application.count({ where: { jobId } });
+
+        return res.status(200).json({
+            message: "Job applications fetched successfully",
+            job,
+            applications,
+            pagination: {
+                page,
+                limit,
+                total: totalApplications,
+                totalPages: Math.ceil(totalApplications / limit),
+            }
+        });
+    } catch(err) {
+        console.error(`Error fetching the full details of jobId:${jobId}`, err instanceof Error ? err.message : err);
+        return res.status(500).json({
+            message: "Internal server error",
             error: err instanceof Error ? err.message : "Unknown error"
         })
     }
