@@ -15,19 +15,20 @@ datasource db {
 }
 
 model User {
-  id             String     @id @default(uuid()) @db.Uuid
+  id             String         @id @default(uuid()) @db.Uuid
   name           String
-  email          String     @unique
+  email          String         @unique
   password       String
-  role           Role       @default(APPLICANT)
+  role           Role           @default(APPLICANT)
   phoneNumber    String?
-  profilePicture String     @default("https://icon-library.com/images/anonymous-avatar-icon/anonymous-avatar-icon-25.jp")
-  isActive       Boolean    @default(false)
+  profilePicture String         @default("https://icon-library.com/images/anonymous-avatar-icon/anonymous-avatar-icon-25.jpg")
+  isActive       Boolean        @default(false)
   lastLogin      DateTime?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   applicant      Applicant?
   recruiter      Recruiter?
+  notifications  Notification[]
 }
 
 model Applicant {
@@ -212,6 +213,23 @@ model SavedJob {
   @@unique([applicantId, jobId])
 }
 
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  notificationType     NotificationType
+  notificationCategory NotificationCategory
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @db.Uuid
+}
+
 // ----------- ENUMS ----------- 
 
 enum Role {
@@ -386,4 +404,30 @@ enum Department {
   BUSINESS_DEVELOPMENT
   ADMINISTRATION
   SECURITY
+}
+
+enum NotificationType {
+  APPLICATION_SUBMITTED
+  APPLICATION_REJECTED
+  APPLICATION_VIEWED
+  INTERVIEW_SCHEDULED
+  INTERVIEW_RESCHEDULED
+  INTERVIEW_CANCELLED
+  DOCUMENT_REQUEST
+  PROFILE_INCOMPLETE
+  SYSTEM_UPDATE
+  MESSAGE_RECEIVED
+  FEATURE_ANNOUNCEMENT
+  NEW_APPLICATION
+  APPLICATION_WITHDRAWN
+  INTERVIEW_CONFIRMED
+}
+
+enum NotificationCategory {
+  APPLICATION
+  INTERVIEW
+  ACCOUNT
+  SYSTEM
+  MESSAGE
+  ENGAGEMENT
 }
