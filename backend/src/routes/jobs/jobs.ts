@@ -2,8 +2,9 @@ import { Request, Response, Router } from "express";
 const router = Router();
 import zod from 'zod';
 import roleMiddleware from "../../middleware/roleMiddleware";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from '@prisma/client';
 import { DepartmentEnum, JobRolEnum } from "../../types/types";
+import { Documentation, Methods, SchemaObject } from "../../docs/documentation";
 const prisma = new PrismaClient();
 
 // ─────────────────────────────
@@ -45,6 +46,145 @@ const jobPostBody = zod.object({
     path: ["minCTC"],
 });
 
+class CreateJobRequestSchema {
+  static schema: SchemaObject = {
+      type: "object",
+      required: [
+          "companyId", "title", "description", "skills", "location", "role", "department",
+          "ctcType", "minCTC", "maxCTC", "currency", "minExperience", "maxExperience",
+          "employmentType", "jobType", "openings", "noticePeriod", "applicationDeadline"
+      ],
+      properties: {
+          companyId: { type: "string", format: "uuid", example: "abc123-def456-ghi789" },
+          title: { type: "string", example: "Frontend Developer" },
+          description: { type: "string", example: "Build and maintain UIs" },
+          skills: {
+              type: "array",
+              items: { type: "string" },
+              example: ["React", "TypeScript"]
+          },
+          location: { type: "string", example: "Bangalore, India" },
+          role: {
+              type: "string",
+              enum: ["FRONTEND_DEVELOPER", "BACKEND_DEVELOPER", "FULLSTACK_DEVELOPER"],
+              example: "FRONTEND_DEVELOPER"
+          },
+          department: {
+              type: "string",
+              enum: ["ENGINEERING", "PRODUCT", "DESIGN"],
+              example: "ENGINEERING"
+          },
+          ctcType: {
+              type: "string",
+              enum: ["RANGE", "COMPETITIVE", "UNDISCLOSED"],
+              example: "RANGE"
+          },
+          minCTC: { type: "number", example: 500000 },
+          maxCTC: { type: "number", example: 800000 },
+          currency: { type: "string", enum: ["INR", "USD", "EUR"], example: "INR" },
+          minExperience: { type: "number", example: 1 },
+          maxExperience: { type: "number", example: 3 },
+          employmentType: {
+              type: "string",
+              enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"],
+              example: "FULL_TIME"
+          },
+          jobType: {
+              type: "string",
+              enum: ["ONSITE", "REMOTE", "HYBRID"],
+              example: "ONSITE"
+          },
+          openings: { type: "number", example: 5 },
+          relocationAssistance: { type: "boolean", example: false },
+          visaSponsorship: { type: "boolean", example: false },
+          noticePeriod: {
+              type: "string",
+              enum: ["IMMEDIATE", "WITHIN_15_DAYS", "WITHIN_30_DAYS", "FLEXIBLE"],
+              example: "IMMEDIATE"
+          },
+          durationInMonths: { type: "number", nullable: true, example: 6 },
+          benefits: {
+              type: "array",
+              items: { type: "string" },
+              example: ["Health insurance", "Flexible hours"]
+          },
+          applicationDeadline: {
+              type: "string",
+              format: "date-time",
+              example: "2025-12-31T23:59:59Z"
+          }
+      }
+  }
+};
+
+class CreateJobResponseSchema {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+        message: {
+            type: "string",
+            example: "Job created successfully"
+        },
+        job: {
+            type: "object",
+            example: {
+                id: "job-id-uuid",
+                companyId: "company-id-uuid",
+                title: "Frontend Developer",
+                recruiterId: "recruiter-id",
+                // ... more job fields
+            }
+        }
+    }
+  }
+};
+
+Documentation.addSchema()(CreateJobRequestSchema);
+Documentation.addSchema()(CreateJobResponseSchema);
+
+Documentation.addRoute({
+    path: "/jobs",
+    method: Methods.post,
+    tags: ["Jobs - Recruiter"],
+    summary: "Create a new job post",
+    requestBody: CreateJobRequestSchema.schema,
+    requestBodyDescription: "Job details to be created",
+    responses: {
+        "201": {
+            description: "Job created successfully",
+            value: CreateJobResponseSchema.schema
+        },
+        "400": {
+            description: "Validation error",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Incorrect inputs" }
+                }
+            }
+        },
+        "401": {
+            description: "Unauthorized",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Unauthorized" }
+                }
+            }
+        },
+        "500": {
+            description: "Server error",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Error creating a job" },
+                    error: { type: "string", example: "Internal server error" }
+                }
+            }
+        }
+    }
+})();
+
 router.post('', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
     if(!recruiterId){
@@ -82,6 +222,108 @@ router.post('', roleMiddleware("RECRUITER"), async (req: Request, res: Response)
     }
 })
 
+
+class GetMyJobsResponse {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+        message: {
+            type: "string",
+            example: "Jobs by recruiter fetched successfully"
+        },
+        jobs: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: {
+                    id: { type: "string", example: "job-id-uuid" },
+                    title: { type: "string", example: "Backend Developer" },
+                    description: { type: "string", example: "Job description here" },
+                    location: { type: "string", example: "Remote" },
+                    recruiterId: { type: "string", example: "recruiter-id-uuid" },
+                    companyId: { type: "string", example: "company-id-uuid" },
+                    createdAt: { type: "string", format: "date-time" },
+                    updatedAt: { type: "string", format: "date-time" },
+
+                    company: {
+                        type: "object",
+                        properties: {
+                            id: { type: "string", example: "company-id-uuid" },
+                            name: { type: "string", example: "ABC Corp" },
+                            logoUrl: { type: "string", example: "https://abc.com/logo.png" },
+                            website: { type: "string", example: "https://abc.com" },
+                        }
+                    },
+
+                    recruiter: {
+                        type: "object",
+                        properties: {
+                            id: { type: "string", example: "recruiter-id-uuid" },
+                            name: { type: "string", example: "John Doe" },
+                            email: { type: "string", format: "email", example: "john@example.com" }
+                        }
+                    },
+
+                    applications: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                id: { type: "string", example: "application-id" },
+                                status: { type: "string", example: "PENDING" },
+                                createdAt: { type: "string", format: "date-time" },
+                                applicant: {
+                                    type: "object",
+                                    properties: {
+                                        id: { type: "string", example: "applicant-id" },
+                                        name: { type: "string", example: "Jane Smith" },
+                                        email: { type: "string", format: "email", example: "jane@example.com" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+  };
+}
+
+Documentation.addSchema()(GetMyJobsResponse);
+
+Documentation.addRoute({
+    path: "/jobs/me",
+    method: Methods.get,
+    tags: ["Jobs - Recruiter"],
+    summary: "Get jobs posted by the current recruiter",
+    responses: {
+        "200": {
+            description: "Jobs fetched successfully",
+            value: GetMyJobsResponse.schema
+        },
+        "401": {
+            description: "Unauthorized access",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Unauthorized" }
+                }
+            }
+        },
+        "500": {
+            description: "Internal server error",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Error fetching jobs by a recruiter" },
+                    error: { type: "string", example: "Database connection failed" }
+                }
+            }
+        }
+    }
+})();
+
 router.get('/me', roleMiddleware("RECRUITER") , async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
     if(!recruiterId){
@@ -118,8 +360,9 @@ router.get('/me', roleMiddleware("RECRUITER") , async (req: Request, res: Respon
     }
 })
 
-const jobPutBody = zod.object({
-    companyId: zod.uuid().optional(),
+
+const jobPatchBody = zod.object({
+    companyId: zod.string().uuid().optional(),
     title: zod.string().optional(),
     description: zod.string().optional(),
     skills: zod.array(zod.string()).min(1).optional(),
@@ -138,9 +381,9 @@ const jobPutBody = zod.object({
     noticePeriod: zod.enum(["IMMEDIATE", "WITHIN_15_DAYS", "WITHIN_30_DAYS", "FLEXIBLE"]).optional(),
     durationInMonths: zod.number().nullable().optional(),
     benefits: zod.array(zod.string()).optional(),
-    applicationDeadline: zod.coerce.date().refine(date => date > new Date(), {
-        message: "Deadline must be in the future"
-    }).optional()
+    applicationDeadline: zod.coerce.date()
+        .refine(date => date > new Date(), { message: "Deadline must be in the future" })
+        .optional()
 }).refine(data => {
     if (data.ctcType === "RANGE") {
         if (data.minCTC == null || data.maxCTC == null) return false;
@@ -152,8 +395,137 @@ const jobPutBody = zod.object({
     path: ["minCTC"]
 });
 
-router.put('/:jobId', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
-    const response = jobPutBody.safeParse(req.body);
+class UpdateJobRequest {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+        companyId: { type: "string", format: "uuid", example: "company-id-uuid" },
+        title: { type: "string", example: "Senior Backend Engineer" },
+        description: { type: "string", example: "Updated job description" },
+        skills: {
+            type: "array",
+            items: { type: "string" },
+            example: ["Node.js", "PostgreSQL"]
+        },
+        location: { type: "string", example: "Remote" },
+        ctcType: {
+            type: "string",
+            enum: ["RANGE", "COMPETITIVE", "UNDISCLOSED"],
+            example: "RANGE"
+        },
+        minCTC: { type: "number", example: 500000 },
+        maxCTC: { type: "number", example: 1000000 },
+        currency: {
+            type: "string",
+            enum: ["INR", "USD", "EUR"],
+            example: "INR"
+        },
+        minExperience: { type: "number", example: 2 },
+        maxExperience: { type: "number", example: 5 },
+        employmentType: {
+            type: "string",
+            enum: ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN"],
+            example: "FULL_TIME"
+        },
+        jobType: {
+            type: "string",
+            enum: ["ONSITE", "REMOTE", "HYBRID"],
+            example: "REMOTE"
+        },
+        openings: { type: "number", example: 3 },
+        relocationAssistance: { type: "boolean", example: false },
+        visaSponsorship: { type: "boolean", example: false },
+        noticePeriod: {
+            type: "string",
+            enum: ["IMMEDIATE", "WITHIN_15_DAYS", "WITHIN_30_DAYS", "FLEXIBLE"],
+            example: "WITHIN_30_DAYS"
+        },
+        durationInMonths: { type: "number", example: 6, nullable: true },
+        benefits: {
+            type: "array",
+            items: { type: "string" },
+            example: ["Health insurance", "Remote work"]
+        },
+        applicationDeadline: {
+            type: "string",
+            format: "date-time",
+            example: "2025-12-31T23:59:59Z"
+        }
+    }
+  };
+}
+
+Documentation.addSchema()(UpdateJobRequest);
+
+Documentation.addRoute({
+    path: "/jobs/:jobId",
+    method: Methods.patch,
+    tags: ["Jobs - Recruiter"],
+    summary: "Update job by ID (recruiter only)",
+    requestBody: UpdateJobRequest.schema,
+    requestBodyDescription: "Fields to update in the job post (all optional)",
+    responses: {
+        "200": {
+            description: "Job updated successfully",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Job updated successfully" },
+                    job: { type: "object", example: { id: "job-id-uuid", title: "Updated title" } }
+                }
+            }
+        },
+        "400": {
+            description: "Validation error",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Incorrect inputs" }
+                }
+            }
+        },
+        "401": {
+            description: "Unauthorized",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Unauthorized" }
+                }
+            }
+        },
+        "403": {
+            description: "Forbidden",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Forbidden: You can't edit this job" }
+                }
+            }
+        },
+        "404": {
+            description: "Job not found",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Job not found" }
+                }
+            }
+        },
+        "500": {
+            description: "Internal server error",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Error updating the job" },
+                    error: { type: "string", example: "Database connection lost" }
+                }
+            }
+        }
+    }
+})();
+
+router.patch('/:jobId', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
+    const response = jobPatchBody.safeParse(req.body);
     if(!response.success){
         return res.status(400).json({
             message: "Incorrect inputs"
@@ -205,6 +577,85 @@ router.put('/:jobId', roleMiddleware("RECRUITER"), async (req: Request, res: Res
     }
 })
 
+
+
+class DeleteJobResponse {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        example: "Job deleted successfully",
+      },
+      job: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "job-id-uuid" },
+          title: { type: "string", example: "Backend Developer" },
+        },
+      },
+    },
+  };
+}
+
+Documentation.addSchema()(DeleteJobResponse);
+
+Documentation.addRoute({
+  path: "/jobs/:jobId",
+  method: Methods.delete,
+  tags: ["Jobs - Recruiter"],
+  summary: "Delete a job by ID",
+  parameters: [
+    {
+      name: "jobId",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+      description: "ID of the job to delete",
+    },
+  ],
+  responses: {
+    "200": {
+      description: "Job deleted successfully",
+      value: DeleteJobResponse.schema,
+    },
+    "401": {
+      description: "Unauthorized",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Unauthorized" },
+        },
+      },
+    },
+    "403": {
+      description: "Forbidden",
+      value: {
+        type: "object",
+        properties: {
+          message: {
+            type: "string",
+            example: "Forbidden: You can't delete this job",
+          },
+        },
+      },
+    },
+    "404": {
+      description: "Job not found",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Job not found" },
+        },
+      },
+    },
+    "500": {
+      description: "Server error",
+      value: { type: "object", properties: { message: { type: "string", example: "Error deleting a job created by you." }, error: { type: "string", example: "Internal server error" } } },
+    },
+  },
+})();
+
 router.delete('/:jobId', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
     if(!recruiterId){
@@ -248,6 +699,145 @@ router.delete('/:jobId', roleMiddleware("RECRUITER"), async (req: Request, res: 
         })
     }
 })
+
+
+class JobDashboardResponse {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+      message: { type: "string", example: "Job dashboard fetched successfully" },
+      job: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "job-id-uuid" },
+          title: { type: "string", example: "Backend Developer" },
+          description: { type: "string", example: "Job description here" },
+          createdAt: { type: "string", format: "date-time" },
+          company: {
+            type: "object",
+            properties: {
+              id: { type: "string", example: "company-id-uuid" },
+              name: { type: "string", example: "ABC Corp" },
+              logoUrl: { type: "string", example: "https://abc.com/logo.png" },
+              website: { type: "string", example: "https://abc.com" },
+            },
+          },
+          recruiterId: { type: "string", example: "recruiter-id-uuid" },
+        },
+      },
+      stats: {
+        type: "object",
+        example: {
+          APPLIED: 10,
+          INTERVIEWING: 5,
+          REJECTED: 2,
+          HIRED: 1,
+        },
+      },
+      applications: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", example: "application-id-uuid" },
+            createdAt: { type: "string", format: "date-time" },
+            applicant: {
+              type: "object",
+              properties: {
+                id: { type: "string", example: "applicant-id-uuid" },
+                resumeUrl: { type: "string", example: "https://resume.link/resume.pdf" },
+                user: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string", example: "Jane Doe" },
+                    email: { type: "string", format: "email", example: "jane@example.com" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      pagination: {
+        type: "object",
+        properties: {
+          page: { type: "number", example: 1 },
+          limit: { type: "number", example: 10 },
+          total: { type: "number", example: 50 },
+          totalPages: { type: "number", example: 5 },
+        },
+      },
+    },
+    required: ["message", "job", "stats", "applications", "pagination"],
+  };
+}
+
+Documentation.addRoute({
+  path: "/jobs/:jobId/dashboard",
+  method: Methods.get,
+  tags: ["Jobs - Recruiter"],
+  summary: "Get dashboard data for a job by ID",
+  parameters: [
+    {
+      name: "jobId",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+      description: "ID of the job",
+    },
+    {
+      name: "page",
+      in: "query",
+      required: false,
+      schema: { type: "integer"},
+      description: "Page number for applications pagination",
+    },
+    {
+      name: "limit",
+      in: "query",
+      required: false,
+      schema: { type: "integer"},
+      description: "Number of applications per page",
+    },
+  ],
+  responses: {
+    "200": {
+      description: "Job dashboard fetched successfully",
+      value: JobDashboardResponse.schema,
+    },
+    "401": {
+      description: "Unauthorized",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Unauthorized" },
+        },
+      },
+    },
+    "403": {
+      description: "Forbidden",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Forbidden: You can only view your own jobs." },
+        },
+      },
+    },
+    "404": {
+      description: "Job not found",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Job not found" },
+        },
+      },
+    },
+    "500": {
+      description: "Server error",
+      value: { type: "object", properties: { message: { type: "string", example: "Error fetching dashboard for a job created by you." }, error: { type: "string", example: "Internal server error" } } },
+    },
+  },
+})();
 
 router.get('/:jobId/dashboard', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
@@ -336,6 +926,137 @@ router.get('/:jobId/dashboard', roleMiddleware("RECRUITER"), async (req: Request
     }
 })
 
+
+class JobApplicationsResponse {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+      message: { type: "string", example: "Job applications fetched successfully" },
+      job: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "job-id-uuid" },
+          title: { type: "string", example: "Backend Developer" },
+          description: { type: "string", example: "Job description here" },
+          createdAt: { type: "string", format: "date-time" },
+          company: {
+            type: "object",
+            properties: {
+              id: { type: "string", example: "company-id-uuid" },
+              name: { type: "string", example: "ABC Corp" },
+              logoUrl: { type: "string", example: "https://abc.com/logo.png" },
+              website: { type: "string", example: "https://abc.com" },
+            },
+          },
+          recruiterId: { type: "string", example: "recruiter-id-uuid" },
+        },
+      },
+      applications: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", example: "application-id-uuid" },
+            createdAt: { type: "string", format: "date-time" },
+            applicant: {
+              type: "object",
+              properties: {
+                id: { type: "string", example: "applicant-id-uuid" },
+                resumeUrl: { type: "string", example: "https://resume.link/resume.pdf" },
+                user: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string", example: "Jane Doe" },
+                    email: { type: "string", format: "email", example: "jane@example.com" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      pagination: {
+        type: "object",
+        properties: {
+          page: { type: "number", example: 1 },
+          limit: { type: "number", example: 10 },
+          total: { type: "number", example: 50 },
+          totalPages: { type: "number", example: 5 },
+        },
+      },
+    },
+    required: ["message", "job", "applications", "pagination"],
+  };
+}
+
+Documentation.addRoute({
+  path: "/jobs/:jobId/applications",
+  method: Methods.get,
+  tags: ["Jobs - Recruiter"],
+  summary: "Get applications for a job by ID",
+  parameters: [
+    {
+      name: "jobId",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+      description: "ID of the job",
+    },
+    {
+      name: "page",
+      in: "query",
+      required: false,
+      schema: { type: "integer"},
+      description: "Page number for pagination",
+    },
+    {
+      name: "limit",
+      in: "query",
+      required: false,
+      schema: { type: "integer"},
+      description: "Number of applications per page",
+    },
+  ],
+  responses: {
+    "200": {
+      description: "Job applications fetched successfully",
+      value: JobApplicationsResponse.schema,
+    },
+    "401": {
+      description: "Unauthorized",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Unauthorized" },
+        },
+      },
+    },
+    "403": {
+      description: "Forbidden",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Forbidden: You can only view your own jobs." },
+        },
+      },
+    },
+    "404": {
+      description: "Job not found",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Job not found" },
+        },
+      },
+    },
+    "500": {
+      description: "Server error",
+      value: { type: "object", properties: { message: { type: "string", example: "Error fetching applications for a job created by you." }, error: { type: "string", example: "Internal server error" } } },
+    },
+  },
+})();
+
+
 router.get('/:jobId/applications', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
     if(!recruiterId){
@@ -413,6 +1134,106 @@ router.get('/:jobId/applications', roleMiddleware("RECRUITER"), async (req: Requ
 // ─────────────────────────────
 //     APPLICANT JOB ROUTES
 // ─────────────────────────────
+
+
+class JobListResponse {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+      page: { type: "number", example: 1 },
+      count: { type: "number", example: 25 },
+      totalJobs: { type: "number", example: 123 },
+      totalPages: { type: "number", example: 5 },
+      jobs: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", example: "job-id-uuid" },
+            title: { type: "string", example: "Backend Developer" },
+            description: { type: "string", example: "Job description here" },
+            location: { type: "string", example: "Remote" },
+            role: { type: "string", example: "Developer" },
+            skills: {
+              type: "array",
+              items: { type: "string" },
+              example: ["Node.js", "TypeScript"]
+            },
+            jobType: { type: "string", example: "Full-time" },
+            workMode: { type: "string", example: "Remote" },
+            department: { type: "string", example: "Engineering" },
+            salaryMin: { type: "number", example: 50000 },
+            salaryMax: { type: "number", example: 100000 },
+            companyType: { type: "string", example: "Startup" },
+            createdAt: { type: "string", format: "date-time", example: "2023-01-01T12:00:00Z" },
+            company: {
+              type: "object",
+              properties: {
+                id: { type: "string", example: "company-id-uuid" },
+                name: { type: "string", example: "ABC Corp" },
+                logoUrl: { type: "string", example: "https://abc.com/logo.png" }
+              }
+            },
+            recruiter: {
+              type: "object",
+              properties: {
+                id: { type: "string", example: "recruiter-id-uuid" },
+                positionTitle: { type: "string", example: "Senior Recruiter" },
+                user: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string", example: "John Doe" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    required: ["page", "count", "totalJobs", "totalPages", "jobs"],
+  }
+}
+
+Documentation.addRoute({
+  path: "/jobs",
+  method: Methods.get,
+  tags: ["Jobs - Applicant"],
+  summary: "Fetch paginated list of jobs with filters",
+  parameters: [
+    { name: "page", in: "query", required: false, schema: { type: "string", example: "1" }, description: "Page number" },
+    { name: "limit", in: "query", required: false, schema: { type: "string", example: "25" }, description: "Number of jobs per page" },
+    { name: "roles", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated roles to filter" },
+    { name: "skills", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated skills to filter" },
+    { name: "jobType", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated job types to filter" },
+    { name: "location", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated locations to filter" },
+    { name: "workMode", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated work modes to filter" },
+    { name: "department", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated departments to filter" },
+    { name: "salaryMin", in: "query", required: false, schema: { type: "string" }, description: "Minimum salary filter" },
+    { name: "salaryMax", in: "query", required: false, schema: { type: "string" }, description: "Maximum salary filter" },
+    { name: "companyType", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated company types" },
+    { name: "postedDate", in: "query", required: false, schema: { type: "string", enum: ["oldest", "newest"] }, description: "Sort by oldest or newest" },
+    { name: "company", in: "query", required: false, schema: { type: "string" }, description: "Filter by company name" },
+    { name: "minExperience", in: "query", required: false, schema: { type: "string" }, description: "Minimum experience in years" },
+    { name: "maxExperience", in: "query", required: false, schema: { type: "string" }, description: "Maximum experience in years" }
+  ],
+  responses: {
+    "200": {
+      description: "Paginated list of jobs fetched successfully",
+      value: JobListResponse.schema,
+    },
+    "500": {
+      description: "Internal server error",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Error fetching jobs" },
+          error: { type: "string", example: "Unknown error" }
+        }
+      }
+    }
+  }
+})()
 
 router.get('/', async (req: Request, res: Response) => {
     const { 
@@ -617,6 +1438,108 @@ router.get('/', async (req: Request, res: Response) => {
     }
 })
 
+
+class JobDetailResponse {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+      message: { type: "string", example: "Job fetched successfully" },
+      job: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "job-id-uuid" },
+          title: { type: "string", example: "Backend Developer" },
+          description: { type: "string", example: "Job description here" },
+          location: { type: "string", example: "Remote" },
+          role: { type: "string", example: "Developer" },
+          skills: {
+            type: "array",
+            items: { type: "string" },
+            example: ["Node.js", "TypeScript"]
+          },
+          jobType: { type: "string", example: "Full-time" },
+          workMode: { type: "string", example: "Remote" },
+          department: { type: "string", example: "Engineering" },
+          salaryMin: { type: "number", example: 50000 },
+          salaryMax: { type: "number", example: 100000 },
+          company: {
+            type: "object",
+            properties: {
+              name: { type: "string", example: "ABC Corp" },
+              logoUrl: { type: "string", example: "https://abc.com/logo.png" }
+            }
+          },
+          recruiter: {
+            type: "object",
+            properties: {
+              positionTitle: { type: "string", example: "Senior Recruiter" },
+              user: {
+                type: "object",
+                properties: {
+                  name: { type: "string", example: "John Doe" }
+                }
+              }
+            }
+          },
+          createdAt: { type: "string", format: "date-time", example: "2023-01-01T12:00:00Z" },
+        },
+        required: ["id", "title", "company", "recruiter"]
+      },
+      meta: {
+        type: "object",
+        properties: {
+          isApplied: { type: "boolean", example: false },
+          isHidden: { type: "boolean", example: true }
+        },
+        required: ["isApplied", "isHidden"]
+      }
+    },
+    required: ["message", "job", "meta"]
+  }
+}
+
+Documentation.addRoute({
+  path: "/jobs/:jobId",
+  method: Methods.get,
+  tags: ["Jobs - Applicant"],
+  summary: "Fetch a single job by ID",
+  parameters: [
+    {
+      name: "jobId",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+      description: "ID of the job to fetch"
+    }
+  ],
+  responses: {
+    "200": {
+      description: "Job fetched successfully",
+      value: JobDetailResponse.schema
+    },
+    "404": {
+      description: "Job not found",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Job not found" }
+        }
+      }
+    },
+    "500": {
+      description: "Internal server error",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Error fetching the job" },
+          error: { type: "string", example: "Unknown error" }
+        }
+      }
+    }
+  }
+})();
+
+
 router.get('/:jobId', async (req: Request, res: Response) => {
     const { jobId } = req.params;
     const userId = req.user?.userId;
@@ -697,6 +1620,85 @@ const jobApplicationBody = zod.object({
     coverLetter: zod.string().optional(),
     portfolioUrl: zod.url().optional()
 })
+
+class JobApplicationRequest {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+      resume: { type: "string", nullable: true, example: "https://resume.link/myresume.pdf" },
+      coverLetter: { type: "string", nullable: true, example: "I am very interested in this position because..." },
+      portfolioUrl: { type: "string", format: "url", nullable: true, example: "https://myportfolio.com" },
+    }
+  };
+}
+
+class JobApplicationResponse {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+      message: { type: "string", example: "Application submitted successfully" },
+      application: {
+        type: "object",
+        properties: {
+          id: { type: "string", example: "application-id-uuid" },
+          applicantId: { type: "string", example: "applicant-id-uuid" },
+          jobId: { type: "string", example: "job-id-uuid" },
+          resume: { type: "string", nullable: true, example: "https://resume.link/myresume.pdf" },
+          coverLetter: { type: "string", nullable: true, example: "I am very interested in this position because..." },
+          portfolioUrl: { type: "string", format: "url", nullable: true, example: "https://myportfolio.com" },
+          createdAt: { type: "string", format: "date-time", example: "2025-01-01T12:00:00Z" },
+        },
+        required: ["id", "applicantId", "jobId", "createdAt"],
+      },
+    },
+    required: ["message", "application"],
+  };
+}
+
+Documentation.addRoute({
+  path: "/jobs/:jobId/apply",
+  method: Methods.post,
+  tags: ["Jobs - Applicant"],
+  summary: "Apply for a job",
+  requestBody: JobApplicationRequest.schema,
+  requestBodyDescription: "job application for the jobId",
+  parameters: [
+    {
+      name: "jobId",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+      description: "ID of the job to fetch",
+    },
+  ],
+  responses: {
+    "200": {
+      description: "Job applied successfully",
+      value: JobApplicationResponse.schema,
+    },
+    "404": {
+      description: "Job not found",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Job not found" },
+        },
+      },
+    },
+    "500": {
+      description: "Internal server error",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Error applying for the job" },
+          error: { type: "string", example: "Unknown error" },
+        },
+      },
+    },
+  },
+})();
+
+
 router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const { jobId } = req.params;
     const applicantId = req.user?.userId;
@@ -771,6 +1773,85 @@ router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, r
 
 // ------ Saved ------
 
+class SavedJobResponse {
+  static schema: SchemaObject = {
+    type: "object",
+    properties: {
+      message: { type: "string", example: "Job saved successfully" },
+      job: {
+        type: "object",
+        properties: {
+          id: { type: "string", format: "uuid", example: "saved-job-id-uuid" },
+          jobId: { type: "string", format: "uuid", example: "job-id-uuid" },
+          applicantId: { type: "string", format: "uuid", example: "applicant-id-uuid" },
+          createdAt: { type: "string", format: "date-time", example: "2025-09-28T12:34:56Z" },
+        },
+        required: ["id", "jobId", "applicantId", "createdAt"],
+      },
+    },
+    required: ["message", "job"],
+  };
+}
+
+Documentation.addRoute({
+  path: "/jobs/:jobId/save",
+  method: Methods.post,
+  tags: ["Saved"],
+  summary: "Save a job for an applicant",
+  parameters: [
+    {
+      name: "jobId",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+      description: "ID of the job to save",
+    },
+  ],
+  responses: {
+    "201": {
+      description: "Job saved successfully",
+      value: SavedJobResponse.schema,
+    },
+    "401": {
+      description: "Unauthorized",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Unauthorized" },
+        },
+      },
+    },
+    "404": {
+      description: "Job not found",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Job not found" },
+        },
+      },
+    },
+    "409": {
+      description: "Job already saved",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "You have already saved this job." },
+        },
+      },
+    },
+    "500": {
+      description: "Internal server error",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Internal server error" },
+          error: { type: "string", example: "Unknown error" },
+        },
+      },
+    },
+  },
+})();
+
 router.post('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const applicantId = req.user?.userId;
     if(!applicantId){
@@ -823,6 +1904,77 @@ router.post('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, re
     }
 })
 
+class DeletedSavedJobResponse {
+  static schema = {
+    type: "object",
+    properties: {
+      message: { type: "string", example: "Saved job removed successfully" },
+      job: {
+        type: "object",
+        properties: {
+          id: { type: "string", format: "uuid", example: "saved-job-id-uuid" },
+          jobId: { type: "string", format: "uuid", example: "job-id-uuid" },
+          applicantId: { type: "string", format: "uuid", example: "applicant-id-uuid" },
+          createdAt: { type: "string", format: "date-time", example: "2025-09-28T12:34:56Z" },
+          deletedAt: { type: "string", format: "date-time", example: "2025-09-29T09:10:11Z" }, // optional if you track this
+        },
+        required: ["id", "jobId", "applicantId", "createdAt"],
+      },
+    },
+    required: ["message", "job"],
+  };
+}
+
+Documentation.addRoute({
+  path: "/jobs/:jobId/save",
+  method: Methods.delete,
+  tags: ["Saved"],
+  summary: "Remove a saved job for an applicant",
+  parameters: [
+    {
+      name: "jobId",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+      description: "ID of the job to remove from saved list",
+    },
+  ],
+  responses: {
+    "200": {
+      description: "Saved job removed successfully",
+      value: DeletedSavedJobResponse.schema,
+    },
+    "401": {
+      description: "Unauthorized",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Unauthorized" },
+        },
+      },
+    },
+    "404": {
+      description: "Job or saved job not found",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Job not found" },
+        },
+      },
+    },
+    "500": {
+      description: "Internal server error",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Internal server error" },
+          error: { type: "string", example: "Unknown error" },
+        },
+      },
+    },
+  },
+})();
+
 router.delete('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const applicantId = req.user?.userId;
     if(!applicantId){
@@ -873,6 +2025,123 @@ router.delete('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, 
         })
     }
 })
+
+
+class SavedJob {
+  static schema = {
+    type: "object",
+    properties: {
+      id: { type: "string", format: "uuid", example: "saved-job-id-uuid" },
+      createdAt: { type: "string", format: "date-time", example: "2025-09-28T12:34:56Z" },
+      job: {
+        type: "object",
+        properties: {
+          id: { type: "string", format: "uuid", example: "job-id-uuid" },
+          title: { type: "string", example: "Backend Developer" },
+          description: { type: "string", example: "Job description here" },
+          createdAt: { type: "string", format: "date-time", example: "2025-09-20T09:00:00Z" },
+          company: {
+            type: "object",
+            properties: {
+              id: { type: "string", format: "uuid", example: "company-id-uuid" },
+              name: { type: "string", example: "ABC Corp" },
+              logoUrl: { type: "string", example: "https://abc.com/logo.png" },
+              website: { type: "string", example: "https://abc.com" },
+            },
+            required: ["id", "name"],
+          },
+        },
+        required: ["id", "title", "company"],
+      },
+      applicantId: { type: "string", format: "uuid", example: "applicant-id-uuid" },
+    },
+    required: ["id", "job", "applicantId", "createdAt"],
+  };
+}
+
+class Pagination {
+  static schema = {
+    type: "object",
+    properties: {
+      total: { type: "integer", example: 100 },
+      page: { type: "integer", example: 1 },
+      limit: { type: "integer", example: 10 },
+      totalPages: { type: "integer", example: 10 },
+      order: { type: "string", enum: ["asc", "desc"], example: "desc" },
+    },
+    required: ["total", "page", "limit", "totalPages", "order"],
+  };
+}
+
+class SavedJobsResponse {
+  static schema = {
+    type: "object",
+    properties: {
+      message: { type: "string", example: "Saved jobs fetched successfully" },
+      data: {
+        type: "array",
+        items: SavedJob.schema,
+      },
+      pagination: Pagination.schema,
+    },
+    required: ["message", "data", "pagination"],
+  };
+}
+
+Documentation.addRoute({
+  path: "/jobs/saved",
+  method: Methods.get,
+  tags: ["Saved"],
+  summary: "Fetch saved jobs for the logged-in applicant",
+  parameters: [
+    {
+      name: "page",
+      in: "query",
+      required: false,
+      schema: { type: "integer"},
+      description: "Page number for pagination",
+    },
+    {
+      name: "limit",
+      in: "query",
+      required: false,
+      schema: { type: "integer"},
+      description: "Number of saved jobs per page",
+    },
+    {
+      name: "order",
+      in: "query",
+      required: false,
+      schema: { type: "string", enum: ["asc", "desc"] },
+      description: "Order of saved jobs by creation date",
+    },
+  ],
+  responses: {
+    "200": {
+      description: "Saved jobs fetched successfully",
+      value: SavedJobsResponse.schema,
+    },
+    "401": {
+      description: "Unauthorized",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Unauthorized" },
+        },
+      },
+    },
+    "500": {
+      description: "Internal server error",
+      value: {
+        type: "object",
+        properties: {
+          message: { type: "string", example: "Internal server error" },
+          error: { type: "string", example: "Unknown error" },
+        },
+      },
+    },
+  },
+})();
 
 router.get('/saved', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const applicantId = req.user?.userId;
@@ -925,4 +2194,5 @@ router.get('/saved', roleMiddleware("APPLICANT"), async (req: Request, res: Resp
         })
     }
 })
+
 export default router;

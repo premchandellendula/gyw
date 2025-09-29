@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { Role } from "../generated/prisma";
+import { Role } from '@prisma/client';
 
 function roleMiddleware(role: Role){
     return (req: Request, res: Response, next: NextFunction) => {
