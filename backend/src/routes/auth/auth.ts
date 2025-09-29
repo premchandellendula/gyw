@@ -6,7 +6,18 @@ import jwt from 'jsonwebtoken';
 import { PrismaClient, Role } from "@prisma/client"
 import authMiddleware from '../../middleware/authMiddleware';
 import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
+import rateLimit from 'express-rate-limit';
 const prisma = new PrismaClient();
+
+const loginLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 40,
+    message: 'Too many login/signup attempts. Try again in 10 minutes.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+router.use(loginLimiter);
 
 const signupBody = zod.object({
     name: zod.string(),
