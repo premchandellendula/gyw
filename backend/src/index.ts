@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import rootRouter from './routes/index'
 import cookieParser from 'cookie-parser'
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './config/swagger';
+import { Documentation } from './docs/documentation';
 
 const app = express()
 const port = process.env.PORT || 8000
@@ -11,6 +14,13 @@ app.use(cors())
 app.use(cookieParser());
 
 app.use('/api/v1', rootRouter)
+
+app.get('/api-docs.json', (req, res) => {
+  res.json(Documentation.getAPIJson())
+})
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(null, {
+  swaggerUrl: '/api-docs.json'
+}));
 
 app.get('/', (req, res) => {
   res.send('Hello World!')
@@ -24,4 +34,5 @@ app.use((req, res, next) => {
 
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
+  console.log(`Swagger docs available at http://localhost:${port}/api-docs`);
 })

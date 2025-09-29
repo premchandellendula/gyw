@@ -2,10 +2,117 @@ import express, { Request, Response } from 'express';
 import roleMiddleware from '../../middleware/roleMiddleware';
 const router = express.Router();
 import zod from 'zod';
-import { PrismaClient } from '../../generated/prisma';
+import { PrismaClient } from '@prisma/client';
+import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
 const prisma = new PrismaClient();
 
 // ------ Recruiter ------
+class GetApplicationForMyJobsResponse {
+    static schema: SchemaObject = {
+        type: "object",
+        properties: {
+            message: {
+                type: "string",
+                example: "Application fetched successfully",
+            },
+            application: {
+                type: "object",
+                properties: {
+                    id: { type: "string", example: "application-123" },
+                    status: { type: "string", example: "PENDING" },
+                    createdAt: { type: "string", format: "date-time", example: "2025-09-27T10:00:00Z" },
+                    applicant: {
+                        type: "object",
+                        properties: {
+                            id: { type: "string", example: "applicant-456" },
+                            resumeUrl: { type: "string", example: "https://example.com/resume.pdf" },
+                            location: { type: "string", example: "San Francisco, CA" },
+                            yearsOfExperience: { type: "number", example: 3 },
+                            skills: {
+                                type: "array",
+                                items: { type: "string" },
+                                example: ["JavaScript", "Node.js", "React"]
+                            },
+                            isWillingToRelocate: { type: "boolean", example: true },
+                            user: {
+                                type: "object",
+                                properties: {
+                                name: { type: "string", example: "John Doe" },
+                                email: { type: "string", format: "email", example: "johndoe@gmail.com" }
+                                }
+                            }
+                        }
+                    },
+                    job: {
+                        type: "object",
+                        properties: {
+                            id: { type: "string", example: "job-789" },
+                            title: { type: "string", example: "Frontend Developer" },
+                            company: {
+                                type: "object",
+                                properties: {
+                                    name: { type: "string", example: "Acme Corp" },
+                                    logoUrl: { type: "string", example: "https://example.com/logo.png" }
+                                }
+                            },
+                            recruiter: {
+                                type: "object",
+                                properties: {
+                                    user: {
+                                        type: "object",
+                                        properties: {
+                                            name: { type: "string", example: "Recruiter Jane" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+Documentation.addSchema()(GetApplicationForMyJobsResponse)
+
+Documentation.addRoute({
+    path: "/applications/:id",
+    method: Methods.get,
+    tags: ["Application - Recruiter"],
+    summary: "Get Application for the jobs created by a recruiter",
+    parameters: [
+        {
+            in: "path",
+            name: "id",
+            required: true,
+            schema: { type: "string", example: "application-id-123" },
+        }
+    ],
+    responses: {
+        "200": {
+            description: "Application fetched successfully",
+            value: GetApplicationForMyJobsResponse.schema,
+        },
+        "401": {
+            description: "Unauthorized (no recruiter ID)",
+            value: { type: "object", properties: { message: { type: "string", example: "Unauthorized" }, error: { type: "string", example: "Missing user ID in request" } } },
+        },
+        "403": {
+            description: "Forbidden: recruiter not allowed to access this application",
+            value: { type: "object", properties: { message: { type: "string", example: "Application not found" }, error: { type: "string", example: "Forbidden: You can only view applications for your own jobs."} } },
+        },
+        "404": {
+            description: "Application not found",
+            value: { type: "object", properties: { message: { type: "string", example: "Application not found" }, error: { type: "string", example: "Application not found" } } },
+        },
+        "500": {
+            description: "Server error",
+            value: { type: "object", properties: { message: { type: "string", example: "Error fetching application for a job created by you." }, error: { type: "string", example: "Internal server error" } } },
+        },
+    },
+})();
+
 router.get('/:id', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const { id } = req.params;
 
@@ -77,6 +184,132 @@ const applicationPatchBody = zod.object({
     status: zod.enum(["PENDING", "REVIEWED", "ACCEPTED", "REJECTED", "WITHDRAWN"])
 })
 
+class UpdateApplicationStatusRequest {
+    static schema: SchemaObject = {
+        type: "object",
+        required: ["status"],
+        properties: {
+            status: {
+                type: "string",
+                enum: ["PENDING", "REVIEWED", "ACCEPTED", "REJECTED", "WITHDRAWN"],
+                example: "REVIEWED"
+            }
+        }
+    };
+}
+
+class UpdateApplicationStatusResponse {
+    static schema: SchemaObject = {
+        type: "object",
+        properties: {
+            message: {
+                type: "string",
+                example: "Application status updated successfully"
+            },
+            application: {
+                type: "object",
+                properties: {
+                    id: { type: "string", example: "application-id-123" },
+                    status: {
+                        type: "string",
+                        enum: ["PENDING", "REVIEWED", "ACCEPTED", "REJECTED", "WITHDRAWN"],
+                        example: "REVIEWED"
+                    },
+                    job: {
+                        type: "object",
+                        properties: {
+                            id: { type: "string", example: "job-id-456" },
+                            title: { type: "string", example: "Frontend Developer" }
+                        }
+                    },
+                    applicant: {
+                        type: "object",
+                        properties: {
+                            id: { type: "string", example: "applicant-id-789" },
+                            name: { type: "string", example: "Jane Doe" }
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
+
+Documentation.addSchema()(UpdateApplicationStatusRequest)
+Documentation.addSchema()(UpdateApplicationStatusResponse)
+
+Documentation.addRoute({
+    path: "/application/:id/status",
+    method: Methods.patch,
+    tags: ["Application - Recruiter"],
+    summary: "Update application status by recruiter",
+    parameters: [
+        {
+            in: "path",
+            name: "id",
+            required: true,
+            schema: { type: "string", example: "application-id-123" }
+        }
+    ],
+    requestBody: UpdateApplicationStatusRequest.schema,
+    requestBodyDescription: "Payload to update the application status",
+    responses: {
+        "200": {
+            description: "Application status updated successfully",
+            value: UpdateApplicationStatusResponse.schema
+        },
+        "400": {
+            description: "Invalid input",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Invalid input" }
+                }
+            }
+        },
+        "401": {
+            description: "Unauthorized",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Unauthorized" }
+                }
+            }
+        },
+        "403": {
+            description: "Forbidden: Recruiter cannot access this application",
+            value: {
+                type: "object",
+                properties: {
+                    message: {
+                        type: "string",
+                        example: "Forbidden: You can only update applications for your own jobs."
+                    }
+                }
+            }
+        },
+        "404": {
+            description: "Application not found",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Application not found" }
+                }
+            }
+        },
+        "500": {
+            description: "Internal server error",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Internal server error" },
+                    error: { type: "string", example: "Prisma query failed" }
+                }
+            }
+        }
+    }
+})();
+
 router.patch('/:id/status', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
     if(!recruiterId){
@@ -138,6 +371,65 @@ router.patch('/:id/status', roleMiddleware("RECRUITER"), async (req: Request, re
         })
     }
 })
+
+Documentation.addRoute({
+    path: "/applications/:id/resume",
+    method: Methods.get,
+    tags: ["Application - Recruiter"],
+    summary: "Redirect to the applicant's resume URL for download/view",
+    parameters: [
+        {
+            in: "path",
+            name: "id",
+            required: true,
+            schema: { type: "string", example: "application-id-123" },
+            description: "The ID of the application",
+        }
+    ],
+    responses: {
+        "302": {
+            description: "Redirect to resume URL",
+            value: {}
+        },
+        "401": {
+            description: "Unauthorized",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Unauthorized" }
+                }
+            }
+        },
+        "403": {
+            description: "Forbidden",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Forbidden" }
+                }
+            }
+        },
+        "404": {
+            description: "Not Found",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Resume not found for this applicant." }
+                }
+            }
+        },
+        "500": {
+            description: "Internal server error",
+            value: {
+                type: "object",
+                properties: {
+                    message: { type: "string", example: "Internal server error" },
+                    error: { type: "string", example: "Something went wrong while fetching resume" }
+                }
+            }
+        }
+    }
+})();
 
 router.get('/:id/resume', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
