@@ -3,8 +3,8 @@ import cors from 'cors';
 import rootRouter from './routes/index'
 import cookieParser from 'cookie-parser'
 import swaggerUi from 'swagger-ui-express';
-import swaggerSpec from './config/swagger';
 import { Documentation } from './docs/documentation';
+import rateLimit from 'express-rate-limit';
 
 const app = express()
 const port = process.env.PORT || 8000
@@ -12,6 +12,15 @@ const port = process.env.PORT || 8000
 app.use(express.json())
 app.use(cors())
 app.use(cookieParser());
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  message: 'Too many requests. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(globalLimiter);
 
 app.use('/api/v1', rootRouter)
 
