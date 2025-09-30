@@ -2,8 +2,9 @@ import express, { Request, Response } from 'express';
 import roleMiddleware from '../../middleware/roleMiddleware';
 const router = express.Router();
 import zod from 'zod';
-import { PrismaClient, CompanySize } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
+import logger from '../../utils/logger';
 const prisma = new PrismaClient();
 
 router.use(roleMiddleware('RECRUITER'))
@@ -95,45 +96,52 @@ Documentation.addRoute({
 })();
 
 router.post('/', async (req: Request, res: Response) => {
+  const recruiterId = req.user?.userId;
+  logger.info(`POST / - Attempting to create company - RecruiterId: ${recruiterId}, IP: ${req.ip}`);
+
+  if (!recruiterId) {
+    logger.warn(`Unauthorized access attempt to create company - Missing recruiterId. IP: ${req.ip}`);
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
     const response = companyBody.safeParse(req.body);
     if (!response.success) {
-        return res.status(400).json({
-            message: 'Invalid input',
-            errors: response.error
-        });
-    }
-
-    const recruiterId = req.user?.userId;
-    if (!recruiterId) {
-      return res.status(401).json({ message: 'Unauthorized' });
+      logger.warn(`Validation failed for company creation - RecruiterId: ${recruiterId}, Errors: ${JSON.stringify(response.error)}, Body: ${JSON.stringify(req.body)}`);
+      return res.status(400).json({
+          message: 'Invalid input',
+          errors: response.error
+      });
     }
 
     const companyData = response.data;
 
     try {
-        const company = await prisma.company.create({
-            data: companyData,
-        });
+      logger.debug(`DB Query - Creating company - RecruiterId: ${recruiterId}`);
+      const company = await prisma.company.create({
+          data: companyData,
+      });
 
-        const companyRecruiter = await prisma.recruiterCompany.create({
-          data: {
-            companyId: company.id,
-            recruiterId: recruiterId,
-            isCurrent: true
-          }
-        })
+      logger.debug(`DB Query - Linking recruiter to company - CompanyId: ${company.id}, RecruiterId: ${recruiterId}`);
+      const companyRecruiter = await prisma.recruiterCompany.create({
+        data: {
+          companyId: company.id,
+          recruiterId: recruiterId,
+          isCurrent: true
+        }
+      })
+      logger.info(`Company created and recruiter linked successfully - CompanyId: ${company.id}, RecruiterId: ${recruiterId}`);
 
-        res.status(201).json({
-            message: 'Company created and linked successfully',
-            company,
-            recruiter: companyRecruiter,
-        });
+      res.status(201).json({
+          message: 'Company created and linked successfully',
+          company,
+          recruiter: companyRecruiter,
+      });
     } catch(err) {
-        console.error(err);
-        return res.status(500).json({
-            message: "Error creating company", 
-            error: err instanceof Error ? err.message : "Unknown error",
-        })
+      logger.error(`Error creating company - RecruiterId: ${recruiterId}, IP: ${req.ip}, Message: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+      return res.status(500).json({
+          message: "Error creating company", 
+          error: err instanceof Error ? err.message : "Unknown error",
+      })
     }
 })
 
@@ -218,21 +226,31 @@ Documentation.addRoute({
 })();
 
 router.post('/join', async (req, res) => {
+  const { companyId } = req.body;
   const recruiterId = req.user?.userId;
+  logger.info(`POST /join - RecruiterId: ${recruiterId}, CompanyId: ${companyId}, IP: ${req.ip}`);
   if(!recruiterId){
+    logger.warn(`Unauthorized access attempt to /join - Missing recruiterId. IP: ${req.ip}`);
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const { companyId } = req.body;
+  if (!companyId) {
+    logger.warn(`Missing companyId in /join request - RecruiterId: ${recruiterId}`);
+    return res.status(400).json({ message: 'Missing companyId' });
+  }
 
   try {
+    logger.debug(`DB Query - Checking if company exists - CompanyId: ${companyId}`);
     const company = await prisma.company.findUnique({
       where: { id: companyId },
     });
 
     if (!company) {
+      logger.warn(`Company not found - CompanyId: ${companyId}`);
       return res.status(404).json({ message: 'Company not found' });
     }
+
+    logger.debug(`DB Query - Adding recruiter to company - CompanyId: ${companyId}, RecruiterId: ${recruiterId}`);
 
     const updatedRecruiterCompany = await prisma.recruiterCompany.create({
       data: {
@@ -242,19 +260,21 @@ router.post('/join', async (req, res) => {
       }
     })
 
+    logger.info(`Recruiter successfully joined company - CompanyId: ${companyId}, RecruiterId: ${recruiterId}`);
+
     res.status(200).json({
       message: 'Successfully joined company',
       recruiter: updatedRecruiterCompany,
     });
   } catch (err) {
-    console.error(err);
+    logger.error(`Error in /join - RecruiterId: ${recruiterId}, CompanyId: ${companyId}, IP: ${req.ip}, Message: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    logger.debug(`Stack trace: ${err instanceof Error ? err.stack : 'No stack trace'}`);
     return res.status(500).json({
         message: "Error joining company", 
         error: err instanceof Error ? err.message : "Unknown error",
     })
   }
 });
-
 
 
 class MyCompaniesResponse {
@@ -348,11 +368,15 @@ Documentation.addRoute({
 
 router.get('/me', async (req: Request, res: Response) => {
   const recruiterId = req.user?.userId;
-  if(!recruiterId){
-    return res.status(401).json({ message: "Unauthorized"})
+  logger.info(`GET /me - RecruiterId: ${recruiterId}, IP: ${req.ip}`);
+
+  if (!recruiterId) {
+    logger.warn(`Unauthorized access attempt to /me - Missing recruiterId. IP: ${req.ip}`);
+    return res.status(401).json({ message: "Unauthorized" });
   }
   
   try {
+    logger.debug(`DB Query - Fetching companies linked to recruiterId: ${recruiterId}`);
     const companyDetails = await prisma.company.findMany({
       where: {
         companyRecruiters: {
@@ -377,16 +401,20 @@ router.get('/me', async (req: Request, res: Response) => {
       }
     })
 
-    if (!companyDetails) {
+    if (!companyDetails || companyDetails.length === 0) {
+      logger.warn(`No associated companies found for recruiterId: ${recruiterId}`);
       return res.status(404).json({ message: 'No associated company found' });
     }
+
+    logger.info(`Companies fetched successfully for recruiterId: ${recruiterId}`);
 
     res.status(200).json({
       message: "Company fetched successfully",
       companies: companyDetails
     })
   } catch(err) {
-    console.error(err);
+    logger.error(`Error fetching companies for recruiterId: ${recruiterId}, IP: ${req.ip}, Message: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    logger.debug(`Stack trace: ${err instanceof Error ? err.stack : 'No stack trace'}`);
     return res.status(500).json({
         message: "Error fetching company", 
         error: err instanceof Error ? err.message : "Unknown error",
@@ -509,34 +537,56 @@ Documentation.addRoute({
 })();
 
 router.put('/:companyId', async (req: Request, res: Response) => {
-  const response = companyPutBody.safeParse(req.body);
+  const recruiterId = req.user?.userId;
+  const { companyId } = req.params;
 
+  logger.info(`PUT /:companyId - Attempting to update company - CompanyId: ${companyId}, RecruiterId: ${recruiterId}, IP: ${req.ip}`);
+
+  if (!recruiterId) {
+    logger.warn(`Unauthorized access attempt - Missing recruiterId. IP: ${req.ip}`);
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const response = companyPutBody.safeParse(req.body);
   if(!response.success){
+    logger.warn(`Validation failed for company update - CompanyId: ${companyId}, RecruiterId: ${recruiterId}, Errors: ${JSON.stringify(response.error)}`);
     return res.status(400).json({
       message: "Incorrect inputs",
       error: response.error
     })
   }
 
-  const companyId = req.params.companyId;
-  const recruiterId = req.user?.userId;
-
-  if (!recruiterId) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
 
   try {
+    logger.debug(`DB Query - Checking if recruiter is authorized for companyId: ${companyId}`);
+    const isAuthorized = await prisma.recruiterCompany.findFirst({
+      where: {
+        companyId,
+        recruiterId
+      }
+    });
+
+    if (!isAuthorized) {
+      logger.warn(`Forbidden - RecruiterId ${recruiterId} is not linked to CompanyId ${companyId}`);
+      return res.status(403).json({ message: "Forbidden: You are not authorized to update this company." });
+    }
+
+    logger.debug(`DB Query - Updating company - CompanyId: ${companyId}`);
+
     const updatedCompany = await prisma.company.update({
       where: { id: companyId },
       data: response.data,
     });
+
+    logger.info(`Company updated successfully - CompanyId: ${companyId}, RecruiterId: ${recruiterId}`);
 
     return res.status(200).json({
       message: 'Company updated successfully',
       company: updatedCompany,
     });
   } catch(err) {
-    console.error(err);
+    logger.error(`Error updating company - CompanyId: ${companyId}, RecruiterId: ${recruiterId}, IP: ${req.ip}, Message: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    logger.debug(`Stack trace: ${err instanceof Error ? err.stack : 'No stack trace'}`);
     return res.status(500).json({
         message: "Error updating company", 
         error: err instanceof Error ? err.message : "Unknown error",

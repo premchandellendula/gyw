@@ -5,6 +5,7 @@ import roleMiddleware from "../../middleware/roleMiddleware";
 import { PrismaClient } from '@prisma/client';
 import { DepartmentEnum, JobRolEnum } from "../../types/types";
 import { Documentation, Methods, SchemaObject } from "../../docs/documentation";
+import logger from "../../utils/logger";
 const prisma = new PrismaClient();
 
 // ─────────────────────────────
@@ -187,38 +188,46 @@ Documentation.addRoute({
 
 router.post('', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
-    if(!recruiterId){
-        return res.status(401).json({ message: 'Unauthorized' });
+    logger.info(`POST / - Creating job - RecruiterId: ${recruiterId}, IP: ${req.ip}`);
+
+    if (!recruiterId) {
+      logger.warn(`Unauthorized access attempt to create job - Missing recruiterId. IP: ${req.ip}`);
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
     const response = jobPostBody.safeParse(req.body);
 
     if(!response.success){
-        return res.status(400).json({
-            message: "Incorrect inputs"
-        })
+      logger.warn(`Validation failed for job creation - RecruiterId: ${recruiterId}, Body: ${JSON.stringify(req.body)}`);
+      return res.status(400).json({
+        message: "Incorrect inputs"
+      })
     }
 
     const jobData = response.data;
 
     try {
-        const job = await prisma.job.create({
-            data: {
-                ...jobData, 
-                recruiterId: recruiterId
-            }
-        })
+      logger.debug(`DB Query - Creating job for RecruiterId: ${recruiterId}`);
+      const job = await prisma.job.create({
+          data: {
+              ...jobData, 
+              recruiterId: recruiterId
+          }
+      })
 
-        res.status(201).json({
-            message: "Job created successfully",
-            job
-        })
+      logger.info(`Job created successfully - JobId: ${job.id}, RecruiterId: ${recruiterId}`);
+
+      res.status(201).json({
+          message: "Job created successfully",
+          job
+      })
     } catch(err) {
-        console.error("Error creating a job:", err);
-        return res.status(500).json({
-            message: "Error creating a job",
-            error: err instanceof Error ? err.message : "Unknown error",
-        })
+      logger.error(`Error creating job - RecruiterId: ${recruiterId}, IP: ${req.ip}, Message: ${err instanceof Error ? err.message : "Unknown error"}`);
+      logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+      return res.status(500).json({
+        message: "Error creating a job",
+        error: err instanceof Error ? err.message : "Unknown error",
+      })
     }
 })
 
@@ -326,37 +335,44 @@ Documentation.addRoute({
 
 router.get('/me', roleMiddleware("RECRUITER") , async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
-    if(!recruiterId){
-        return res.status(401).json({ message: 'Unauthorized' });
+    logger.info(`GET /me - Fetching jobs for recruiterId: ${recruiterId}, IP: ${req.ip}`);
+
+    if (!recruiterId) {
+      logger.warn(`Unauthorized access attempt to /me - Missing recruiterId. IP: ${req.ip}`);
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
     try {
-        const jobs = await prisma.job.findMany({
-            where: {
-                recruiterId: recruiterId
-            },
-            orderBy: { createdAt: 'desc' },
-            include: {
-                company: true,
-                recruiter: true,
-                applications: {
-                    include: {
-                        applicant: true
-                    }
-                }
-            }
-        })
+      logger.debug(`DB Query - Fetching jobs for recruiterId: ${recruiterId}`);
+      const jobs = await prisma.job.findMany({
+          where: {
+              recruiterId: recruiterId
+          },
+          orderBy: { createdAt: 'desc' },
+          include: {
+              company: true,
+              recruiter: true,
+              applications: {
+                  include: {
+                      applicant: true
+                  }
+              }
+          }
+      })
 
-        res.status(200).json({
-            message: "Jobs by recruiter fetched successfully",
-            jobs
-        })
+      logger.info(`Jobs fetched successfully - Total: ${jobs.length}, RecruiterId: ${recruiterId}`);
+
+      return res.status(200).json({
+        message: "Jobs by recruiter fetched successfully",
+        jobs
+      });
     } catch(err) {
-        console.error("Error fetching jobs by a recruiter:", err);
-        return res.status(500).json({
-            message: "Error fetching jobs by a recruiter",
-            error: err instanceof Error ? err.message : "Unknown error"
-        })
+      logger.error(`Error fetching jobs for recruiterId: ${recruiterId}, IP: ${req.ip}, Message: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      logger.debug(`Stack trace: ${err instanceof Error ? err.stack : 'No stack trace'}`);
+      return res.status(500).json({
+        message: "Error fetching jobs by a recruiter",
+        error: err instanceof Error ? err.message : "Unknown error"
+      })
     }
 })
 
@@ -525,58 +541,65 @@ Documentation.addRoute({
 })();
 
 router.patch('/:jobId', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
-    const response = jobPatchBody.safeParse(req.body);
-    if(!response.success){
-        return res.status(400).json({
-            message: "Incorrect inputs"
-        })
-    }
+  const recruiterId = req.user?.userId;
+  const { jobId } = req.params;
 
-    const recruiterId = req.user?.userId;
-    if(!recruiterId){
-        return res.status(401).json({ message: 'Unauthorized' });
-    }
+  logger.info(`PATCH /${jobId} - Update job request by recruiterId: ${recruiterId}, IP: ${req.ip}`);
+
+  if (!recruiterId) {
+    logger.warn(`Unauthorized access attempt to update job ${jobId} - Missing recruiterId. IP: ${req.ip}`);
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const response = jobPatchBody.safeParse(req.body);
+  if(!response.success){
+    logger.warn(`Validation failed for job update on jobId: ${jobId} - RecruiterId: ${recruiterId}, Body: ${JSON.stringify(req.body)}`);
+    return res.status(400).json({
+      message: "Incorrect inputs"
+    })
+  }
 
     const jobData = response.data;
-    const { jobId } = req.params;
 
     try {
-        const job = await prisma.job.findUnique({
-            where: {
-                id: jobId
-            }
-        })
+      logger.debug(`DB Query - Finding job with id: ${jobId}`);
 
-        if(!job){
-            return res.status(404).json({
-                message: "Job not found"
-            })
-        }
+      const job = await prisma.job.findUnique({
+          where: { id: jobId }
+      });
 
-        if (job.recruiterId !== recruiterId) {
-            return res.status(403).json({ message: "Forbidden: You can't edit this job" });
-        }
+      if (!job) {
+        logger.warn(`Job not found with id: ${jobId} - RecruiterId: ${recruiterId}`);
+        return res.status(404).json({ message: "Job not found" });
+      }
 
-        const updatedJob = await prisma.job.update({
-            where: {
-                id: jobId
-            },
-            data: jobData
-        })
+      if (job.recruiterId !== recruiterId) {
+        logger.warn(`Forbidden update attempt on jobId: ${jobId} by recruiterId: ${recruiterId}`);
+        return res.status(403).json({ message: "Forbidden: You can't edit this job" });
+      }
 
-        return res.status(200).json({
-            message: "Job updated successfully",
-            job: updatedJob
-        });
+      logger.debug(`DB Query - Updating job with id: ${jobId}`);
+
+      const updatedJob = await prisma.job.update({
+        where: { id: jobId },
+        data: jobData
+      });
+
+      logger.info(`Job updated successfully - JobId: ${jobId}, RecruiterId: ${recruiterId}`);
+
+      return res.status(200).json({
+        message: "Job updated successfully",
+        job: updatedJob
+      });
     } catch(err) {
-        console.error("Error updating job:", err);
-        return res.status(500).json({
-            message: "Error updating the job",
-            error: err instanceof Error ? err.message : "Unknown error"
-        })
+      logger.error(`Error updating job ${jobId} by recruiterId ${recruiterId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+      logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+      return res.status(500).json({
+          message: "Error updating the job",
+          error: err instanceof Error ? err.message : "Unknown error"
+      })
     }
 })
-
 
 
 class DeleteJobResponse {
@@ -658,45 +681,54 @@ Documentation.addRoute({
 
 router.delete('/:jobId', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const recruiterId = req.user?.userId;
-    if(!recruiterId){
-        return res.status(401).json({ message: 'Unauthorized' });
-    }
-
     const { jobId } = req.params;
 
+    logger.info(`DELETE /${jobId} - Delete job request by recruiterId: ${recruiterId}, IP: ${req.ip}`);
+
+    if (!recruiterId) {
+      logger.warn(`Unauthorized access attempt to delete job ${jobId} - Missing recruiterId. IP: ${req.ip}`);
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
     try {
-        const job = await prisma.job.findUnique({
-            where: {
-                id: jobId
-            }
-        })
+      logger.debug(`DB Query - Finding job with id: ${jobId}`);
+      const job = await prisma.job.findUnique({
+          where: {
+              id: jobId
+          }
+      })
 
-        if(!job){
-            return res.status(404).json({
-                message: "Job not found"
-            })
+      if(!job){
+        logger.warn(`Job not found with id: ${jobId} - RecruiterId: ${recruiterId}`);
+        return res.status(404).json({
+          message: "Job not found"
+        })
+      }
+
+      if (job.recruiterId !== recruiterId) {
+        logger.warn(`Forbidden delete attempt on jobId: ${jobId} by recruiterId: ${recruiterId}`);
+        return res.status(403).json({ message: "Forbidden: You can't delete this job" });
+      }
+
+      logger.debug(`DB Query - Deleting job with id: ${jobId}`);
+      const deletedJob = await prisma.job.delete({
+        where: {
+          id: jobId
         }
+      })
 
-        if (job.recruiterId !== recruiterId) {
-            return res.status(403).json({ message: "Forbidden: You can't delete this job" });
-        }
-
-        const deletedJob = await prisma.job.delete({
-            where: {
-                id: jobId
-            }
-        })
-
-        res.status(200).json({
-            message: "Job deleted successfully",
-            job: { id: deletedJob.id, title: deletedJob.title }
-        })
+      logger.info(`Job deleted successfully - JobId: ${jobId}, RecruiterId: ${recruiterId}`);
+      res.status(200).json({
+        message: "Job deleted successfully",
+        job: { id: deletedJob.id, title: deletedJob.title }
+      })
     } catch(err) {
-        console.error("Error deleting job:", err);
-        return res.status(500).json({
-            message: "Error deleting the job",
-            error: err instanceof Error ? err.message : "Unknown error"
-        })
+      logger.error(`Error deleting job ${jobId} by recruiterId ${recruiterId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+      logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+      return res.status(500).json({
+        message: "Error deleting the job",
+        error: err instanceof Error ? err.message : "Unknown error"
+      })
     }
 })
 
@@ -840,90 +872,101 @@ Documentation.addRoute({
 })();
 
 router.get('/:jobId/dashboard', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
-    const recruiterId = req.user?.userId;
-    if(!recruiterId){
-        return res.status(401).json({ message: "Unauthorized" })
+  const recruiterId = req.user?.userId;
+  const { jobId } = req.params;
+  logger.info(`GET /${jobId}/dashboard - Fetch job dashboard request by recruiterId: ${recruiterId}, IP: ${req.ip}`);
+  if(!recruiterId){
+    logger.warn(`Unauthorized access attempt to job dashboard for jobId: ${jobId} - Missing recruiterId. IP: ${req.ip}`);
+    return res.status(401).json({ message: "Unauthorized" })
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const skip = (page - 1) * limit;
+  try {
+    logger.debug(`DB Query - Fetch job with id: ${jobId}`);
+    const job = await prisma.job.findUnique({
+        where: { id: jobId },
+        select: {
+            id: true,
+            title: true,
+            description: true,
+            createdAt: true,
+            company: true,
+            recruiterId: true,
+        }
+    });
+
+    if (!job) {
+      logger.warn(`Job not found with id: ${jobId} for recruiterId: ${recruiterId}`);
+      return res.status(404).json({ message: "Job not found" });
     }
 
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const skip = (page - 1) * limit;
-    const { jobId } = req.params;
-    try {
-        const job = await prisma.job.findUnique({
-            where: { id: jobId },
-            select: {
-                id: true,
-                title: true,
-                description: true,
-                createdAt: true,
-                company: true,
-                recruiterId: true,
-            }
-        });
-
-        if (!job) {
-            return res.status(404).json({ message: "Job not found" });
-        }
-
-        if (job.recruiterId !== recruiterId) {
-            return res.status(403).json({ message: "Forbidden: You can only view your own jobs." });
-        }
-
-        const applicationStats = await prisma.application.groupBy({
-            by: ['status'],
-            where: { jobId },
-            _count: {
-                status: true
-            }
-        });
-
-        const stats = applicationStats.reduce((acc, stat) => {
-            acc[stat.status] = stat._count.status;
-            return acc;
-        }, {} as Record<string, number>);
-
-        const applications = await prisma.application.findMany({
-            where: { jobId },
-            orderBy: { createdAt: 'desc' },
-            skip,
-            take: limit,
-            include: {
-                applicant: {
-                    select: {
-                        id: true,
-                        user: {
-                            select: {
-                                name: true,
-                                email: true
-                            }
-                        },
-                        resumeUrl: true,
-                    }
-                }
-            }
-        });
-        const totalApplications = await prisma.application.count({ where: { jobId } });
-
-        return res.status(200).json({
-            message: "Job dashboard fetched successfully",
-            job,
-            stats,
-            applications,
-            pagination: {
-                page,
-                limit,
-                total: totalApplications,
-                totalPages: Math.ceil(totalApplications / limit),
-            }
-        });
-    } catch(err) {
-        console.error(`Error fetching the full details of jobId:${jobId}`, err instanceof Error ? err.message : err);
-        return res.status(500).json({
-            message: "Internal server error",
-            error: err instanceof Error ? err.message : "Unknown error"
-        })
+    if (job.recruiterId !== recruiterId) {
+      logger.warn(`Forbidden dashboard access attempt on jobId: ${jobId} by recruiterId: ${recruiterId}`);
+      return res.status(403).json({ message: "Forbidden: You can only view your own jobs." });
     }
+
+    logger.debug(`DB Query - Grouping application stats for jobId: ${jobId}`);
+    const applicationStats = await prisma.application.groupBy({
+      by: ['status'],
+      where: { jobId },
+      _count: {
+          status: true
+      }
+    });
+
+    const stats = applicationStats.reduce((acc, stat) => {
+      acc[stat.status] = stat._count.status;
+      return acc;
+    }, {} as Record<string, number>);
+
+    logger.debug(`DB Query - Fetch paginated applications for jobId: ${jobId}`);
+    const applications = await prisma.application.findMany({
+      where: { jobId },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      include: {
+          applicant: {
+              select: {
+                  id: true,
+                  user: {
+                      select: {
+                          name: true,
+                          email: true
+                      }
+                  },
+                  resumeUrl: true,
+              }
+          }
+      }
+    });
+    const totalApplications = await prisma.application.count({ where: { jobId } });
+
+    logger.info(`Job dashboard fetched successfully for jobId: ${jobId} by recruiterId: ${recruiterId}`);
+
+    return res.status(200).json({
+        message: "Job dashboard fetched successfully",
+        job,
+        stats,
+        applications,
+        pagination: {
+            page,
+            limit,
+            total: totalApplications,
+            totalPages: Math.ceil(totalApplications / limit),
+        }
+    });
+  } catch(err) {
+    logger.error(`Error fetching job dashboard for jobId: ${jobId} by recruiterId: ${recruiterId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+    logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+
+    return res.status(500).json({
+          message: "Internal server error",
+          error: err instanceof Error ? err.message : "Unknown error"
+    })
+  }
 })
 
 
@@ -1058,77 +1101,85 @@ Documentation.addRoute({
 
 
 router.get('/:jobId/applications', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
-    const recruiterId = req.user?.userId;
-    if(!recruiterId){
-        return res.status(401).json({ message: "Unauthorized" })
+  const { jobId } = req.params;
+  const recruiterId = req.user?.userId;
+  logger.info(`GET /${jobId}/applications - Fetch job applications request by recruiterId: ${recruiterId}, IP: ${req.ip}`);
+  if(!recruiterId){
+    logger.warn(`Unauthorized access attempt to job applications for jobId: ${jobId} - Missing recruiterId. IP: ${req.ip}`);
+    return res.status(401).json({ message: "Unauthorized" })
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const skip = (page - 1) * limit;
+
+  try {
+    logger.debug(`DB Query - Fetch job with id: ${jobId}`);
+    const job = await prisma.job.findUnique({
+        where: { id: jobId },
+        select: {
+            id: true,
+            title: true,
+            description: true,
+            createdAt: true,
+            company: true,
+            recruiterId: true,
+        }
+    });
+
+    if (!job) {
+      logger.warn(`Job not found with id: ${jobId} for recruiterId: ${recruiterId}`);
+      return res.status(404).json({ message: "Job not found" });
     }
 
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const skip = (page - 1) * limit;
-    const { jobId } = req.params;
+    if (job.recruiterId !== recruiterId) {
+      logger.warn(`Forbidden job applications access attempt on jobId: ${jobId} by recruiterId: ${recruiterId}`);
+      return res.status(403).json({ message: "Forbidden: You can only view your own jobs." });
+    }
 
-    try {
-        const job = await prisma.job.findUnique({
-            where: { id: jobId },
-            select: {
-                id: true,
-                title: true,
-                description: true,
-                createdAt: true,
-                company: true,
-                recruiterId: true,
-            }
-        });
-
-        if (!job) {
-            return res.status(404).json({ message: "Job not found" });
-        }
-
-        if (job.recruiterId !== recruiterId) {
-            return res.status(403).json({ message: "Forbidden: You can only view your own jobs." });
-        }
-
-        const applications = await prisma.application.findMany({
-            where: { jobId },
-            orderBy: { createdAt: 'desc' },
-            skip,
-            take: limit,
-            include: {
-                applicant: {
-                    select: {
-                        id: true,
-                        user: {
-                            select: {
-                                name: true,
-                                email: true
-                            }
-                        },
-                        resumeUrl: true,
-                    }
+    logger.debug(`DB Query - Fetch paginated applications for jobId: ${jobId}`);
+    const applications = await prisma.application.findMany({
+        where: { jobId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: {
+            applicant: {
+                select: {
+                    id: true,
+                    user: {
+                        select: {
+                            name: true,
+                            email: true
+                        }
+                    },
+                    resumeUrl: true,
                 }
             }
-        });
-        const totalApplications = await prisma.application.count({ where: { jobId } });
+        }
+    });
+    const totalApplications = await prisma.application.count({ where: { jobId } });
+    logger.info(`Job applications fetched successfully for jobId: ${jobId} by recruiterId: ${recruiterId}`);
 
-        return res.status(200).json({
-            message: "Job applications fetched successfully",
-            job,
-            applications,
-            pagination: {
-                page,
-                limit,
-                total: totalApplications,
-                totalPages: Math.ceil(totalApplications / limit),
-            }
-        });
-    } catch(err) {
-        console.error(`Error fetching the full details of jobId:${jobId}`, err instanceof Error ? err.message : err);
-        return res.status(500).json({
-            message: "Internal server error",
-            error: err instanceof Error ? err.message : "Unknown error"
-        })
-    }
+    return res.status(200).json({
+        message: "Job applications fetched successfully",
+        job,
+        applications,
+        pagination: {
+            page,
+            limit,
+            total: totalApplications,
+            totalPages: Math.ceil(totalApplications / limit),
+        }
+    });
+  } catch(err) {
+    logger.error(`Error fetching applications for jobId: ${jobId} by recruiterId: ${recruiterId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+    logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err instanceof Error ? err.message : "Unknown error"
+    })
+  }
 })
 
 // ─────────────────────────────
@@ -1259,17 +1310,12 @@ router.get('/', async (req: Request, res: Response) => {
     const userId = req.user?.userId;
 
     function parseToArray(param: any): string[] | undefined {
-        if(!param) return undefined;
+      if(!param) return undefined;
 
-        if (Array.isArray(param)) {
-            return param.map(String).filter(Boolean);
-        }
-
-        return String(param)
-            .split(',')
-            .map(s => s.trim())
-            .filter(Boolean);
+      if (Array.isArray(param)) return param.map(String).map(s => s.trim()).filter(Boolean);
+      return String(param).split(',').map(s => s.trim()).filter(Boolean);
     }
+    logger.info(`GET / - Fetch jobs request. UserId: ${userId || 'Guest'}, IP: ${req.ip}, Page: ${pageNumber}, Limit: ${limitNumber}`);
 
     try {
         const whereClause: any = {};
@@ -1293,6 +1339,7 @@ router.get('/', async (req: Request, res: Response) => {
             whereClause.role = {
                 in: rolesArray,
             };
+            logger.debug(`Filtering roles: ${rolesArray.join(', ')}`);
         }
 
         const skillsArray = parseToArray(skills);
@@ -1300,6 +1347,7 @@ router.get('/', async (req: Request, res: Response) => {
             whereClause.skills = {
                 hasSome: skillsArray,
             };
+            logger.debug(`Filtering skills: ${skillsArray.join(', ')}`);
         }
 
         const minExperience = parseInt(req.query.minExperience as string);
@@ -1312,12 +1360,14 @@ router.get('/', async (req: Request, res: Response) => {
                 whereClause.AND.push({
                     maxExperience: { gte: minExperience }
                 });
+                logger.debug(`Filtering minExperience: ${minExperience}`);
             }
 
             if (!isNaN(maxExperience)) {
                 whereClause.AND.push({
                     minExperience: { lte: maxExperience }
                 });
+                logger.debug(`Filtering maxExperience: ${maxExperience}`);
             }
         }
 
@@ -1328,6 +1378,7 @@ router.get('/', async (req: Request, res: Response) => {
                     mode: 'insensitive',
                 },
             };
+            logger.debug(`Filtering company name contains: ${company}`);
         }
 
         const jobTypeArray = parseToArray(jobType);
@@ -1335,6 +1386,7 @@ router.get('/', async (req: Request, res: Response) => {
             whereClause.jobType = {
                 in: jobTypeArray,
             };
+            logger.debug(`Filtering jobType: ${jobTypeArray.join(', ')}`);
         }
 
         const locationArray = parseToArray(location);
@@ -1346,6 +1398,7 @@ router.get('/', async (req: Request, res: Response) => {
                     mode: 'insensitive',
                 }
             })));
+            logger.debug(`Filtering location: ${locationArray.join(', ')}`);
         }
 
         const workModeArray = parseToArray(workMode);
@@ -1353,6 +1406,7 @@ router.get('/', async (req: Request, res: Response) => {
             whereClause.workMode = {
                 in: workModeArray,
             };
+            logger.debug(`Filtering workMode: ${workModeArray.join(', ')}`);
         }
 
         const departmentArray = parseToArray(department);
@@ -1360,6 +1414,7 @@ router.get('/', async (req: Request, res: Response) => {
             whereClause.department = {
                 in: departmentArray,
             };
+            logger.debug(`Filtering department: ${departmentArray.join(', ')}`);
         }
 
         if (salaryMin || salaryMax) {
@@ -1367,21 +1422,23 @@ router.get('/', async (req: Request, res: Response) => {
             if (salaryMin) {
                 const minSalary = parseInt(salaryMin as string, 10);
                 if (!isNaN(minSalary)) {
-                whereClause.AND.push({
-                    salaryMax: {
-                    gte: minSalary,
-                    },
-                });
+                  whereClause.AND.push({
+                      salaryMax: {
+                      gte: minSalary,
+                      },
+                  });
+                  logger.debug(`Filtering salaryMin: ${minSalary}`);
                 }
             }
             if (salaryMax) {
                 const maxSalary = parseInt(salaryMax as string, 10);
                 if (!isNaN(maxSalary)) {
-                whereClause.AND.push({
-                    salaryMin: {
-                    lte: maxSalary,
-                    },
-                });
+                  whereClause.AND.push({
+                      salaryMin: {
+                      lte: maxSalary,
+                      },
+                  });
+                  logger.debug(`Filtering salaryMax: ${maxSalary}`);
                 }
             }
         }
@@ -1391,12 +1448,18 @@ router.get('/', async (req: Request, res: Response) => {
             whereClause.companyType = {
                 in: companyTypeArray,
             };
+            logger.debug(`Filtering companyType: ${companyTypeArray.join(', ')}`);
         }
 
         let orderBy = { createdAt: 'desc' as 'asc' | 'desc' };
         if (postedDate && typeof postedDate === 'string' && postedDate.toLowerCase() === 'oldest') {
             orderBy = { createdAt: 'asc' };
+            logger.debug(`Ordering by oldest posted date`);
+        } else {
+            logger.debug(`Ordering by newest posted date`);
         }
+
+        logger.debug(`DB Query - Fetch jobs with filters`);
 
         const [jobs, totalJobs] = await Promise.all([
             prisma.job.findMany({
@@ -1421,6 +1484,7 @@ router.get('/', async (req: Request, res: Response) => {
             }),
             prisma.job.count({ where: whereClause }),
         ]);
+        logger.info(`Jobs fetched successfully. Count: ${jobs.length} / Total: ${totalJobs}`);
 
         return res.status(200).json({
             page: pageNumber,
@@ -1430,7 +1494,8 @@ router.get('/', async (req: Request, res: Response) => {
             jobs,
         });
     } catch(err) {
-        console.error("Error fetching jobs:", err)
+        logger.error(`Error fetching jobs - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+        logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
         return res.status(500).json({
             message: "Error fetching jobs",
             error: err instanceof Error ? err.message : "Unknown error"
@@ -1543,75 +1608,81 @@ Documentation.addRoute({
 router.get('/:jobId', async (req: Request, res: Response) => {
     const { jobId } = req.params;
     const userId = req.user?.userId;
+    logger.info(`GET /${jobId} - Fetch job request. UserId: ${userId || 'Guest'}, IP: ${req.ip}`);
     try {
-        const job = await prisma.job.findUnique({
-            where: {
-                id: jobId
-            },
-            include: {
-                company: {
-                    select: {
-                        name: true,
-                        logoUrl: true
-                    }
-                },
-                recruiter: {
-                    select: {
-                        user: {
-                            select: {
-                                name: true
-                            }
-                        },
-                        positionTitle: true
-                    }
+      logger.debug(`DB Query - Fetch job with id: ${jobId}`);
+      const job = await prisma.job.findUnique({
+          where: {
+              id: jobId
+          },
+          include: {
+              company: {
+                  select: {
+                      name: true,
+                      logoUrl: true
+                  }
+              },
+              recruiter: {
+                  select: {
+                      user: {
+                          select: {
+                              name: true
+                          }
+                      },
+                      positionTitle: true
+                  }
+              }
+          }
+      })
+
+      if (!job) {
+        logger.warn(`Job not found with id: ${jobId} (requested by userId: ${userId || 'Guest'})`);
+        return res.status(404).json({
+            message: "Job not found",
+        });
+      }
+
+      let isApplied = false;
+      let isHidden = false
+
+      if(userId){
+        logger.debug(`Checking application and hidden status for userId: ${userId} on jobId: ${jobId}`);
+        const [applied, hidden] = await Promise.all([
+            prisma.application.findFirst({
+                where: {
+                    jobId: job.id,
+                    applicantId: userId
                 }
-            }
-        })
+            }),
+            prisma.hiddenJob.findFirst({
+                where: {
+                    jobId: job.id,
+                    applicantId: userId
+                }
+            })
+        ])
 
-        if (!job) {
-            return res.status(404).json({
-                message: "Job not found",
-            });
-        }
+        isApplied: !!applied
+        isHidden: !!hidden
+        logger.debug(`Application status: ${isApplied}, Hidden status: ${isHidden} for userId: ${userId} on jobId: ${jobId}`);
+      }
+      logger.info(`Job fetched successfully for jobId: ${jobId} (UserId: ${userId || 'Guest'})`);
 
-        let isApplied = false;
-        let isHidden = false
-
-        if(userId){
-            const [applied, hidden] = await Promise.all([
-                prisma.application.findFirst({
-                    where: {
-                        jobId: job.id,
-                        applicantId: userId
-                    }
-                }),
-                prisma.hiddenJob.findFirst({
-                    where: {
-                        jobId: job.id,
-                        applicantId: userId
-                    }
-                })
-            ])
-
-            isApplied: !!applied
-            isHidden: !!hidden
-        }
-
-
-        res.status(200).json({
-            message: "Job fetched successfully",
-            job,
-            meta: {
-                isApplied,
-                isHidden
-            }
-        })
+      res.status(200).json({
+          message: "Job fetched successfully",
+          job,
+          meta: {
+              isApplied,
+              isHidden
+          }
+      })
     } catch(err) {
-        console.error("Error fetching the job: ", err)
-        return res.status(500).json({
-            message: "Error fetching the job",
-            error: err instanceof Error ? err.message : "Unknown error"
-        })
+      logger.error(`Error fetching job with id: ${jobId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+      logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+      return res.status(500).json({
+          message: "Error fetching the job",
+          error: err instanceof Error ? err.message : "Unknown error"
+      })
     }
 })
 
@@ -1702,21 +1773,23 @@ Documentation.addRoute({
 router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const { jobId } = req.params;
     const applicantId = req.user?.userId;
+    logger.info(`POST /${jobId}/apply - Application attempt by applicantId: ${applicantId}, IP: ${req.ip}`);
 
-    if(!applicantId){
-        return res.status(401).json({message: "Unauthorized"})
+    if (!applicantId) {
+        logger.warn(`Unauthorized application attempt to jobId: ${jobId} - Missing applicantId. IP: ${req.ip}`);
+        return res.status(401).json({ message: "Unauthorized" });
     }
 
     const response = jobApplicationBody.safeParse(req.body);
     if(!response.success){
-        return res.status(400).json({
-            message: "Invalid input"
-        })
+        logger.warn(`Invalid application input for jobId: ${jobId} by applicantId: ${applicantId}`);
+        return res.status(400).json({ message: "Invalid input" });
     }
 
     const applicationData = response.data;
 
     try {
+      logger.debug(`DB Query - Fetch applicant with id: ${applicantId}`);
         const applicant = await prisma.applicant.findUnique({
             where: {
                 id: applicantId
@@ -1724,9 +1797,11 @@ router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, r
         })
 
         if(!applicant){
+          logger.warn(`Applicant profile not found for applicantId: ${applicantId}`);
             return res.status(404).json({ message: "Applicant profile not found" })
         }
 
+        logger.warn(`Applicant profile not found for applicantId: ${applicantId}`);
         const job = await prisma.job.findUnique({
             where: {
                 id: jobId
@@ -1734,9 +1809,11 @@ router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, r
         })
 
         if(!job){
+          logger.warn(`Job not found with id: ${jobId} (ApplicantId: ${applicantId})`);
             return res.status(404).json({ message: "Job not found" })
         }
 
+        logger.debug(`DB Query - Check existing application for jobId: ${jobId} and applicantId: ${applicantId}`);
         const existing = await prisma.application.findUnique({
             where: {
                 applicantId_jobId: {
@@ -1747,9 +1824,11 @@ router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, r
         })
 
         if(existing){
+          logger.info(`Duplicate application attempt to jobId: ${jobId} by applicantId: ${applicantId}`);
             return res.status(409).json({ message: "You have already applied to this job" })
         }
 
+        logger.debug(`DB Insert - Creating application for jobId: ${jobId} by applicantId: ${applicantId}`);
         const application = await prisma.application.create({
             data: {
                 applicantId: applicantId,
@@ -1758,12 +1837,15 @@ router.post('/:jobId/apply', roleMiddleware("APPLICANT"), async (req: Request, r
             }
         })
 
+        logger.info(`Application submitted successfully for jobId: ${jobId} by applicantId: ${applicantId}`);
+
         return res.status(201).json({
             message: "Application submitted successfully",
             application
         })
     } catch(err) {
-        console.error("Error applying for the job: ", err)
+        logger.error(`Error applying to jobId: ${jobId} by applicantId: ${applicantId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+        logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
         return res.status(500).json({
             message: "Internal server error",
             error: err instanceof Error ? err.message : "Unknown error"
@@ -1854,13 +1936,17 @@ Documentation.addRoute({
 
 router.post('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const applicantId = req.user?.userId;
-    if(!applicantId){
-        return res.status(401).json({ message: "Unauthorized" })
+    const { jobId } = req.params;
+    logger.info(`POST /${jobId}/save - Save job attempt by applicantId: ${applicantId}, IP: ${req.ip}`);
+
+    if (!applicantId) {
+        logger.warn(`Unauthorized job save attempt for jobId: ${jobId} - Missing applicantId. IP: ${req.ip}`);
+        return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { jobId } = req.params;
 
     try {
+        logger.debug(`DB Query - Fetch job with id: ${jobId}`);
         const job = await prisma.job.findUnique({
             where: {
                 id: jobId
@@ -1868,9 +1954,11 @@ router.post('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, re
         })
 
         if(!job){
+          logger.warn(`Job not found with id: ${jobId} (ApplicantId: ${applicantId})`);
             return res.status(404).json({message: "Job not found"})
         }
 
+        logger.debug(`DB Query - Check if job is already saved [jobId=${jobId}, applicantId=${applicantId}]`);
         const alreadySaved = await prisma.savedJob.findFirst({
             where: {
                 jobId,
@@ -1879,24 +1967,28 @@ router.post('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, re
         })
 
         if (alreadySaved) {
+          logger.info(`Duplicate save attempt for jobId: ${jobId} by applicantId: ${applicantId}`);
             return res.status(409).json({
                 message: "You have already saved this job."
             });
         }
 
+        logger.debug(`DB Insert - Saving job for applicantId: ${applicantId}, jobId: ${jobId}`);
         const savedJob = await prisma.savedJob.create({
             data: {
                 jobId,
                 applicantId
             }
         })
+        logger.info(`Job saved successfully [jobId=${jobId}] by applicantId: ${applicantId}`);
 
         return res.status(201).json({
             message: "Job saved successfully",
             job: savedJob
         })
     } catch(err) {
-        console.error(`Error saving job [jobId=${jobId}, applicantId=${applicantId}]:`, err);
+        logger.error(`Error saving job [jobId=${jobId}, applicantId=${applicantId}] - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+        logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
         return res.status(500).json({
             message: "Internal server error",
             error: err instanceof Error ? err.message : "Unknown error"
@@ -1926,7 +2018,7 @@ class DeletedSavedJobResponse {
 }
 
 Documentation.addRoute({
-  path: "/jobs/:jobId/save",
+  path: "/jobs/:jobId/unsave",
   method: Methods.delete,
   tags: ["Saved"],
   summary: "Remove a saved job for an applicant",
@@ -1975,15 +2067,19 @@ Documentation.addRoute({
   },
 })();
 
-router.delete('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
+router.delete('/:jobId/unsave', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const applicantId = req.user?.userId;
-    if(!applicantId){
-        return res.status(401).json({ message: "Unauthorized" })
-    }
-
     const { jobId } = req.params;
 
+    logger.info(`DELETE /${jobId}/save - Unsave job attempt by applicantId: ${applicantId}, IP: ${req.ip}`);
+
+    if (!applicantId) {
+        logger.warn(`Unauthorized unsave job attempt for jobId: ${jobId} - Missing applicantId. IP: ${req.ip}`);
+        return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
+      logger.debug(`DB Query - Fetch job with id: ${jobId}`);
         const job = await prisma.job.findUnique({
             where: {
                 id: jobId
@@ -1991,19 +2087,23 @@ router.delete('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, 
         })
 
         if(!job){
+            logger.warn(`Job not found with id: ${jobId} (applicantId: ${applicantId})`);
             return res.status(404).json({message: "Job not found"})
         }
 
+        logger.debug(`DB Query - Find saved job [jobId=${jobId}, applicantId=${applicantId}]`);
         const savedJob = await prisma.savedJob.findFirst({
             where: { jobId, applicantId }
         });
 
         if (!savedJob) {
+          logger.warn(`Saved job not found for jobId: ${jobId} and applicantId: ${applicantId}`);
             return res.status(404).json({
                 message: "Saved job not found."
             });
         }
 
+        logger.debug(`DB Delete - Removing saved job [jobId=${jobId}, applicantId=${applicantId}]`);
         const deletedJob = await prisma.savedJob.delete({
             where: {
                 applicantId_jobId: {
@@ -2013,12 +2113,15 @@ router.delete('/:jobId/save', roleMiddleware("APPLICANT"), async (req: Request, 
             }
         })
 
+        logger.info(`Saved job removed successfully [jobId=${jobId}] by applicantId: ${applicantId}`);
+
         return res.status(200).json({
             message: "Saved job removed successfully",
             job: deletedJob
         })
     } catch(err) {
-        console.error(`Error removing the job from saved [jobId=${jobId}, applicantId=${applicantId}]:`, err);
+        logger.error(`Error removing saved job [jobId=${jobId}, applicantId=${applicantId}] - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+        logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
         return res.status(500).json({
             message: "Internal server error",
             error: err instanceof Error ? err.message : "Unknown error"
@@ -2145,18 +2248,24 @@ Documentation.addRoute({
 
 router.get('/saved', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const applicantId = req.user?.userId;
-    if(!applicantId){
-        return res.status(401).json({ message: "Unauthorized" })
+    logger.info(`GET /saved - Fetch saved jobs request by applicantId: ${applicantId}, IP: ${req.ip}`);
+
+    if (!applicantId) {
+        logger.warn(`Unauthorized saved jobs access attempt. IP: ${req.ip}`);
     }
 
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const order = (req.query.order as string)?.toLowerCase() === 'asc' ? 'asc' : 'desc';
     const skip = (page - 1) * limit;
+
     try {
+      logger.debug(`DB Query - Count total saved jobs for applicantId: ${applicantId}`);
         const totalCount = await prisma.savedJob.count({
             where: { applicantId }
         });
+
+        logger.debug(`DB Query - Fetch saved jobs for applicantId: ${applicantId} with pagination (page: ${page}, limit: ${limit}, order: ${order})`);
         const savedJobs = await prisma.savedJob.findMany({
             where: {
                 applicantId
@@ -2175,6 +2284,7 @@ router.get('/saved', roleMiddleware("APPLICANT"), async (req: Request, res: Resp
             take: limit
         })
         
+        logger.info(`Saved jobs fetched successfully for applicantId: ${applicantId} (count: ${savedJobs.length})`);
         return res.status(200).json({
             message: "Saved jobs fetched successfully",
             data: savedJobs,
@@ -2187,7 +2297,8 @@ router.get('/saved', roleMiddleware("APPLICANT"), async (req: Request, res: Resp
             }
         })
     } catch(err) {
-        console.error(`Error fetching saved jobs, applicantId=${applicantId}]:`, err);
+        logger.error(`Error fetching saved jobs for applicantId=${applicantId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+        logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
         return res.status(500).json({
             message: "Internal server error",
             error: err instanceof Error ? err.message : "Unknown error"

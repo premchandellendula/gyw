@@ -3,6 +3,7 @@ import roleMiddleware from '../../middleware/roleMiddleware';
 const router = express.Router();
 import { PrismaClient } from '@prisma/client';
 import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
+import logger from '../../utils/logger';
 const prisma = new PrismaClient();
 
 class GetJobSeekersResponse {
@@ -112,7 +113,11 @@ Documentation.addRoute({
 
 router.get('/search', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
   const recruiterId = req.user?.userId;
+
+  logger.info(`GET /search - RecruiterId: ${recruiterId}, IP: ${req.ip}`);
+
   if (!recruiterId) {
+    logger.warn(`Unauthorized access attempt to /search - Missing recruiterId. IP: ${req.ip}`);
     return res.status(401).json({ message: "Unauthorized" });
   }
 
@@ -122,22 +127,24 @@ router.get('/search', roleMiddleware("RECRUITER"), async (req: Request, res: Res
   const limitNumber = parseInt(limit as string) || 10;
   const skip = (pageNumber - 1) * limitNumber;
 
+  const whereClause: any = {};
+
+  if (skills) {
+    whereClause.skills = {
+      hasSome: (skills as string).split(',').map(skill => skill.trim()),
+    };
+  }
+
+  if (role) {
+    whereClause.role = {
+      contains: role as string,
+      mode: 'insensitive',
+    };
+  }
+
+  logger.debug(`Applicant search filters - RecruiterId: ${recruiterId}, Skills: ${skills || 'N/A'}, Role: ${role || 'N/A'}, Page: ${pageNumber}, Limit: ${limitNumber}`);
+
   try {
-    const whereClause: any = {};
-
-    if (skills) {
-      whereClause.skills = {
-        hasSome: (skills as string).split(','),
-      };
-    }
-
-    if (role) {
-      whereClause.role = {
-        contains: role as string,
-        mode: 'insensitive',
-      };
-    }
-
     const [applicants, total] = await Promise.all([
       prisma.applicant.findMany({
         where: whereClause,
@@ -156,6 +163,7 @@ router.get('/search', roleMiddleware("RECRUITER"), async (req: Request, res: Res
       }),
       prisma.applicant.count({ where: whereClause }),
     ]);
+    logger.info(`Applicant search successful - Found ${applicants.length} applicants out of ${total}, RecruiterId: ${recruiterId}`);
 
     return res.status(200).json({
       message: "Applicants fetched successfully",
@@ -168,7 +176,9 @@ router.get('/search', roleMiddleware("RECRUITER"), async (req: Request, res: Res
       }
     });
   } catch (error) {
-    console.error('Error searching applicants', error);
+    logger.error(`Error searching applicants - RecruiterId: ${recruiterId}, IP: ${req.ip}, Message: ${error instanceof Error ? error.message : "Unknown error"}`);
+    logger.debug(`Stack trace: ${error instanceof Error ? error.stack : "No stack trace"}`);
+
     return res.status(500).json({
       message: "Internal server error",
       error: error instanceof Error ? error.message : "Unknown error",
@@ -282,13 +292,18 @@ Documentation.addRoute({
 
 router.get('/:id', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
   const recruiterId = req.user?.userId;
+  const applicantId = req.params.id;
+
+  logger.info(`GET /:id - Fetching applicant - ApplicantId: ${applicantId}, RecruiterId: ${recruiterId}, IP: ${req.ip}`);
+
   if (!recruiterId) {
+    logger.warn(`Unauthorized access attempt to /:id - Missing recruiterId. IP: ${req.ip}`);
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  const applicantId = req.params.id;
-
   try {
+    logger.debug(`DB Query - Checking application link between RecruiterId: ${recruiterId} and ApplicantId: ${applicantId}`);
+
     const application = await prisma.application.findFirst({
       where: {
         applicantId,
@@ -298,6 +313,8 @@ router.get('/:id', roleMiddleware("RECRUITER"), async (req: Request, res: Respon
         id: true,
       },
     });
+
+    logger.debug(`DB Query - Fetching applicant profile - ApplicantId: ${applicantId}`);
 
     const applicant = await prisma.applicant.findUnique({
       where: { id: applicantId },
@@ -316,15 +333,19 @@ router.get('/:id', roleMiddleware("RECRUITER"), async (req: Request, res: Respon
     });
 
     if (!applicant) {
+      logger.warn(`Applicant not found - ApplicantId: ${applicantId}`);
       return res.status(404).json({ message: "Applicant not found" });
     }
+
+    logger.info(`Applicant fetched successfully - ApplicantId: ${applicantId}, RecruiterId: ${recruiterId}`);
 
     return res.status(200).json({
       message: "Applicant fetched successfully",
       applicant,
     });
   } catch (error) {
-    console.error(`Error fetching applicant with id:${applicantId}`, error);
+    logger.error(`Error fetching applicant - ApplicantId: ${applicantId}, RecruiterId: ${recruiterId}, IP: ${req.ip}, Message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    logger.debug(`Stack trace: ${error instanceof Error ? error.stack : 'No stack trace'}`);
     return res.status(500).json({
       message: "Internal server error",
       error: error instanceof Error ? error.message : "Unknown error",

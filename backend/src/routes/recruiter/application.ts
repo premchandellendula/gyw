@@ -4,6 +4,7 @@ const router = express.Router();
 import zod from 'zod';
 import { PrismaClient } from '@prisma/client';
 import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
+import logger from '../../utils/logger';
 const prisma = new PrismaClient();
 
 // ------ Recruiter ------
@@ -115,13 +116,16 @@ Documentation.addRoute({
 
 router.get('/:id', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
     const { id } = req.params;
-
     const recruiterId = req.user?.userId;
+    logger.info(`GET /:id - Fetching aplication for applicationId: ${id}, IP: ${req.ip}`);
+
     if(!recruiterId){
+        logger.warn(`Unauthorized access attempt - Missing recruiterId. IP: ${req.ip}`);
         return res.status(401).json({ message: "Unauthorized" })
     }
 
     try {
+        logger.debug(`DB Query - Fetching application with applicationId: ${id}`);
         const application = await prisma.application.findUnique({
             where: {
                 id
@@ -160,19 +164,25 @@ router.get('/:id', roleMiddleware("RECRUITER"), async (req: Request, res: Respon
         })
 
         if (!application) {
+            logger.warn(`Application not found with applicationId: ${id}`);
             return res.status(404).json({ message: "Application not found" });
         }
 
         if (application.job.recruiterId !== recruiterId) {
+            logger.warn(`Forbidden: You cannot view applications created by other recruiters`);
             return res.status(403).json({ message: "Forbidden: You can only view applications for your own jobs." });
         }
+        logger.debug(`DB Result - ${application} application fetched for applicationId: ${id}`);
 
+        logger.info(`Application details fetched successfully for applicationId: ${id}`);
         return res.status(200).json({
             message: "Application fetched successfully",
             application
         })
     } catch(err) {
-        console.error(`Error fetching the application for applicationId=${id}`, err);
+        logger.error(`Error fetching application for applicationID: ${id} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+        logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+
         return res.status(500).json({
             message: "Internal server error",
             error: err instanceof Error ? err.message : "Unknown error"
@@ -311,22 +321,27 @@ Documentation.addRoute({
 })();
 
 router.patch('/:id/status', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
+    const { id } = req.params;
     const recruiterId = req.user?.userId;
+    logger.info(`PATCH /:id/status - Updating aplication status for applicationId: ${id}, IP: ${req.ip}`);
+
     if(!recruiterId){
+        logger.warn(`Unauthorized access attempt - Missing recruiterId. IP: ${req.ip}`);
         return res.status(401).json({ message: "Unauthorized" })
     }
 
     const response = applicationPatchBody.safeParse(req.body);
     if(!response.success){
+        logger.warn(`Validation failed for application status update: ${JSON.stringify(req.body)}`);
         return res.status(400).json({
             message: "Invalid input"
         })
     }
 
-    const { id } = req.params;
     const {status} = response.data
 
     try {
+        logger.debug(`DB Query - Checking for application with applicationId: ${id}`);
         const application = await prisma.application.findUnique({
             where: {
                 id
@@ -339,12 +354,15 @@ router.patch('/:id/status', roleMiddleware("RECRUITER"), async (req: Request, re
         })
 
         if(!application){
+            logger.warn(`Application not found with applicationId: ${id}`);
             return res.status(404).json({ message: "Application not found" })
         }
 
         if(application.job.recruiterId !== recruiterId){
+            logger.warn(`Forbidden: You cannot update applications created by other recruiters`);
             return res.status(403).json({ message: "Forbidden: You can only update applications for your own jobs." });
         }
+        logger.debug(`DB Query - Updating application status for applicationId: ${id}, with status ${status}`);
 
         const updatedApplication = await prisma.application.update({
             where: {
@@ -359,12 +377,18 @@ router.patch('/:id/status', roleMiddleware("RECRUITER"), async (req: Request, re
             }
         })
 
+        logger.debug(`DB Result - status updated for applicationId: ${id}`);
+
+        logger.info(`Application status updated successfully for applicationId: ${id}`);
+
         return res.status(200).json({
             message: "Application status updated successfully",
             application: updatedApplication
         })
     } catch(err) {
-        console.error(`Error updating the application status [applicationId=${id}, recruiterId=${recruiterId}]:`, err)
+        logger.error(`Error updating the application status of applicationId: ${id} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+        logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
+
         return res.status(500).json({
             message: "Internal server error",
             error: err instanceof Error ? err.message : "Unknown error"
@@ -432,13 +456,17 @@ Documentation.addRoute({
 })();
 
 router.get('/:id/resume', roleMiddleware("RECRUITER"), async (req: Request, res: Response) => {
+    const { id } = req.params;
     const recruiterId = req.user?.userId;
+    logger.info(`GET /:id/resume - RecruiterId: ${recruiterId}, ApplicationId: ${id}, IP: ${req.ip}`);
+
     if (!recruiterId) {
+        logger.warn(`Unauthorized access attempt - Missing recruiterId. IP: ${req.ip}`);
         return res.status(401).json({ message: "Unauthorized" });
     }
-    const { id } = req.params;
 
     try {
+        logger.debug(`DB Query - Fetching application with ID: ${id}`);
         const application = await prisma.application.findUnique({
             where: { id },
             include: {
@@ -456,23 +484,28 @@ router.get('/:id/resume', roleMiddleware("RECRUITER"), async (req: Request, res:
         });
 
         if (!application) {
+            logger.warn(`Application not found - applicationId: ${id}`);
             return res.status(404).json({ message: "Application not found" });
         }
 
         if (application.job.recruiterId !== recruiterId) {
+            logger.warn(`Forbidden access - RecruiterId ${recruiterId} tried to access resume for applicationId ${id}`);
             return res.status(403).json({ message: "Forbidden" });
         }
 
         const resumeUrl = application.applicant.resumeUrl;
 
         if (!resumeUrl) {
+            logger.warn(`Resume not found - ApplicationId: ${id}`);
             return res.status(404).json({ message: "Resume not found for this applicant." });
         }
 
+        logger.info(`Redirecting to resume URL for applicationId: ${id}`);
         return res.redirect(resumeUrl);
 
     } catch (err) {
-        console.error(`Error downloading resume for applicationId=${id}`, err);
+        logger.error(`Error fetching resume for applicationId: ${id} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+        logger.debug(`Stack trace: ${err instanceof Error ? err.stack : "No stack trace"}`);
         return res.status(500).json({
             message: "Internal server error",
             error: err instanceof Error ? err.message : "Unknown error"
