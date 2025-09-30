@@ -3,6 +3,7 @@ import roleMiddleware from '../../middleware/roleMiddleware';
 const router = express.Router();
 import { ApplicationStatus, PrismaClient } from '@prisma/client';
 import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
+import logger from '../../utils/logger';
 const prisma = new PrismaClient();
 
 class GetMyApplicationsResponse {
@@ -117,8 +118,11 @@ Documentation.addRoute({
 
 router.get('/me', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
     const applicantId = req.user?.userId;
+    logger.info(`GET /me - Fetching applications for applicantId: ${applicantId}, IP: ${req.ip}`);
+
     if(!applicantId){
-        return res.status(401).json({ message: "Unauthorized" })
+      logger.warn(`Unauthorized access attempt - Missing applicantId. IP: ${req.ip}`);
+      return res.status(401).json({ message: "Unauthorized" })
     }
 
     const page = parseInt(req.query.page as string) || 1;
@@ -126,18 +130,27 @@ router.get('/me', roleMiddleware("APPLICANT"), async (req: Request, res: Respons
     const skip = (page - 1) * limit;
     const statusRaw = req.query.status as string | undefined;
     const validStatuses = Object.values(ApplicationStatus);
+    logger.debug(`Query params - page: ${page}, limit: ${limit}, statusRaw: ${statusRaw}`);
 
     const status = statusRaw && validStatuses.includes(statusRaw as ApplicationStatus)
     ? (statusRaw as ApplicationStatus)
     : undefined;
 
+    if (statusRaw && !status) {
+        logger.warn(`Invalid status filter provided: ${statusRaw}`);
+    }
+
     try {
+        logger.debug(`DB Query - Counting applications for applicantId: ${applicantId}, status: ${status}`);
         const total = await prisma.application.count({
             where: {
                 applicantId,
                 ...(status ? { status} : {})
             }
         })
+        logger.debug(`DB Result - Total applications found: ${total}`);
+
+        logger.debug(`DB Query - Fetching applications with pagination - skip: ${skip}, take: ${limit}`);
         const applications = await prisma.application.findMany({
             where: {
                 applicantId,
@@ -157,6 +170,8 @@ router.get('/me', roleMiddleware("APPLICANT"), async (req: Request, res: Respons
             skip,
             take: limit
         })
+        logger.debug(`DB Result - Applications fetched: ${applications.length}`);
+        logger.info(`Applications fetched successfully for applicantId: ${applicantId}, page: ${page}, limit: ${limit}`);
 
         return res.status(200).json({
             message: "Applications fetched successfully",
@@ -171,6 +186,7 @@ router.get('/me', roleMiddleware("APPLICANT"), async (req: Request, res: Respons
             }
         });
     } catch(err) {
+        logger.error(`Error fetching applications for applicantId: ${applicantId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
         console.error(`Error fetching applications applied by applicantId:${applicantId}`, err)
         return res.status(500).json({
             message: "Internal server error",

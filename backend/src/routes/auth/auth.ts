@@ -7,12 +7,16 @@ import { PrismaClient, Role } from "@prisma/client"
 import authMiddleware from '../../middleware/authMiddleware';
 import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
 import rateLimit from 'express-rate-limit';
+import logger from 'utils/logger';
 const prisma = new PrismaClient();
 
 const loginLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
     max: 40,
-    message: 'Too many login/signup attempts. Try again in 10 minutes.',
+    handler: (req, res, next) => {
+    logger.warn(`Rate limit exceeded for IP: ${req.ip} on ${req.originalUrl}`);
+        res.status(429).json({ message: 'Too many login/signup attempts. Try again in 10 minutes.' });
+    },
     standardHeaders: true,
     legacyHeaders: false,
 });
@@ -95,6 +99,7 @@ router.post('/signup', async (req: Request, res: Response) => {
     const response = signupBody.safeParse(req.body)
 
     if(!response.success){
+        logger.warn(`Signup validation failed: ${JSON.stringify(response.error)} - IP: ${req.ip}`);
         res.status(400).json({
             message: "Incorrect inputs",
             errors: response.error,
@@ -103,6 +108,7 @@ router.post('/signup', async (req: Request, res: Response) => {
     }
 
     const { name, email, password, role } = response.data;
+    logger.debug(`Signup attempt started for email: ${email}, IP: ${req.ip}`);
 
     try {
         const existingUser = await prisma.user.findFirst({
@@ -114,6 +120,7 @@ router.post('/signup', async (req: Request, res: Response) => {
         }) 
 
         if(existingUser){
+            logger.info(`Signup failed - email already exists: ${email}, IP: ${req.ip}`);
             return res.status(409).json({
                 message: "Email already exists"
             });
@@ -132,6 +139,7 @@ router.post('/signup', async (req: Request, res: Response) => {
 
         const JWT_SECRET = process.env.JWT_SECRET;
         if(!JWT_SECRET){
+            logger.error("JWT_SECRET not defined");
             throw new Error("JWT_SECRET not defined")
         }
 
@@ -144,6 +152,8 @@ router.post('/signup', async (req: Request, res: Response) => {
             secure: true
         })
 
+        logger.info(`User signed up successfully: ${email}, ID: ${user.id}, IP: ${req.ip}`);
+
         res.status(201).json({
             message: "User created successfully",
             data: {
@@ -153,6 +163,7 @@ router.post('/signup', async (req: Request, res: Response) => {
             }
         })
     } catch (err) {
+        logger.error(`Error creating user for email ${email}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         res.status(500).json({
             message: "Error creating user",
             error: err instanceof Error ? err.message : "Unknown error",
@@ -223,6 +234,7 @@ router.post('/signin', async (req: Request, res: Response) => {
     const response = signinBody.safeParse(req.body)
 
     if(!response.success){
+        logger.warn(`Signin validation failed: ${JSON.stringify(response.error)} - IP: ${req.ip}`);
         res.status(400).json({
             message: "Incorrect inputs",
             errors: response.error,
@@ -231,6 +243,7 @@ router.post('/signin', async (req: Request, res: Response) => {
     }
 
     const { email, password } = response.data;
+    logger.debug(`Signin attempt started for email: ${email}, IP: ${req.ip}`);
 
     try {
         const user = await prisma.user.findFirst({
@@ -238,16 +251,20 @@ router.post('/signin', async (req: Request, res: Response) => {
                 email: email
             }
         })
+        logger.debug(`DB lookup result for ${email}: ${user ? 'User found' : 'User not found'}`);
 
         if(!user){
+            logger.warn(`Signin failed: User not found for email: ${email} - IP: ${req.ip}`);
             return res.status(404).json({
                 message: "User not found"
             });
         }
 
         const isPasswordValid = await bcrypt.compare(password, user.password)
+        logger.debug(`Password validation for ${email}: ${isPasswordValid}`);
 
         if(!isPasswordValid){
+            logger.warn(`Signin failed: Incorrect password for user: ${email} - IP: ${req.ip}`);
             return res.status(401).json({
                 message: "Incorrect password"
             })
@@ -272,6 +289,8 @@ router.post('/signin', async (req: Request, res: Response) => {
             secure: true
         })
 
+        logger.info(`User signed in successfully: ${email} - IP: ${req.ip}`);
+
         res.status(200).json({
             message: "User signed in successfully",
             data: {
@@ -279,8 +298,8 @@ router.post('/signin', async (req: Request, res: Response) => {
                 email: user.email,
             }
         })
-
     } catch(err) {
+        logger.error(`Signin error for email ${email}: ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
         return res.status(500).json({
             message: "Error signing user", 
             error: err instanceof Error ? err.message : "Unknown error",
@@ -326,7 +345,11 @@ Documentation.addRoute({
 })();
 
 router.get('/me', authMiddleware, async (req: Request, res: Response) => {
+    logger.debug(`Fetching profile attempt started for userId: ${req.user?.userId}, IP: ${req.ip}`);
     try {
+        if(!req.user?.userId){
+            logger.warn(`User ID missing from request - IP: ${req.ip}`)
+        }
         const user = await prisma.user.findUnique({
             where: {
                 id: req.user?.userId
@@ -339,11 +362,21 @@ router.get('/me', authMiddleware, async (req: Request, res: Response) => {
             }
         })
 
+        if(!user){
+            logger.warn(`User not found for userId: ${req.user?.userId}, IP: ${req.ip}`)
+            return res.status(404).json({ message: "User not found" })
+        }
+
+        logger.info(`User profile fetched successfully: ${user?.email} - IP: ${req.ip}`);
+        logger.debug(`DB lookup result for ${req.user?.userId}: User found`);
+
+
         res.status(200).json({
             message: "User fetched successfully",
             user
         })
     } catch(err) {
+        logger.error(`Error fetching user profile for userId ${req.user?.userId}: ${err instanceof Error ? err.message : "Unknown error"}`)
         return res.status(500).json({
             message: "Error signing user",
             error: err instanceof Error ? err.message : "Unknown error"
@@ -370,7 +403,11 @@ Documentation.addRoute({
     },
 })();
 
-router.post('/logout', authMiddleware, async (req: Request, res: Response) => {
+router.post('/logout', authMiddleware, (req: Request, res: Response) => {
+    const userId = req.user?.userId;
+    const ip = req.ip;
+
+    logger.info(`Logout attemt for userId: ${userId} - IP: ${ip}`)
     res.clearCookie("token", {
         httpOnly: true,
         sameSite: "lax",

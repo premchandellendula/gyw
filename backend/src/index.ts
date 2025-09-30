@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser'
 import swaggerUi from 'swagger-ui-express';
 import { Documentation } from './docs/documentation';
 import rateLimit from 'express-rate-limit';
+import morgan from 'morgan';
 
 const app = express()
 const port = process.env.PORT || 8000
@@ -12,6 +13,7 @@ const port = process.env.PORT || 8000
 app.use(express.json())
 app.use(cors())
 app.use(cookieParser());
+app.use(morgan('combined'))
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

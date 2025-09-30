@@ -3,7 +3,8 @@ const router = express.Router();
 import { PrismaClient } from '@prisma/client';
 import roleMiddleware from '../../middleware/roleMiddleware';
 import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
-const prisma  = new PrismaClient();
+import logger from '../../utils/logger';
+const prisma = new PrismaClient();
 
 class GetCompaniesResponse {
   static schema: SchemaObject = {
@@ -85,66 +86,83 @@ Documentation.addRoute({
 })();
 
 router.get('/', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
-    const applicantId = req.user?.userId;
-    if(!applicantId){
-        return res.status(401).json({ message: "Unauthorized" })
-    }
+  const applicantId = req.user?.userId;
+  logger.info(`GET / - Fetching companies for applicantId: ${applicantId}, IP: ${req.ip}`);
 
-    const {
-        name,
-        industry,
-        location,
-        size,
-        sortBy = 'createdAt',
-        order = 'desc',
-        page = 1,
-        limit = 10
-    } = req.query;
+  if (!applicantId) {
+    logger.warn(`Unauthorized access attempt - Missing applicantId. IP: ${req.ip}`);
+    return res.status(401).json({ message: "Unauthorized" })
+  }
 
-    const filters: any = {};
+  const {
+    name,
+    industry,
+    location,
+    size,
+    sortBy = 'createdAt',
+    order = 'desc',
+    page = 1,
+    limit = 10
+  } = req.query;
+  logger.debug(`Query params received - name: ${name}, industry: ${industry}, location: ${location}, size: ${size}, sortBy: ${sortBy}, order: ${order}, page: ${page}, limit: ${limit}`);
 
-    if (name) {
-        filters.name = { contains: name, mode: 'insensitive' };
-    }
-    if (industry) {
-        filters.industry = industry;
-    }
-    if (location) {
-        filters.location = location;
-    }
-    if (size) {
-        filters.size = size;
-    }
+  const filters: any = {};
 
-    try {
-        const companies = await prisma.company.findMany({
-            where: filters,
-            orderBy: {
-                [sortBy as string]: order
-            },
-            skip: (Number(page) - 1) * Number(limit),
-            take: Number(limit)
-        });
+  if (name) {
+    filters.name = { contains: name, mode: 'insensitive' };
+  }
+  if (industry) {
+    filters.industry = industry;
+  }
+  if (location) {
+    filters.location = location;
+  }
+  if (size) {
+    filters.size = size;
+  }
+  logger.debug(`Constructed filters: ${JSON.stringify(filters)}`);
+  const pageNumber = Number(page);
+  const limitNumber = Number(limit);
+  const skip = (pageNumber - 1) * limitNumber;
 
-        const total = await prisma.company.count({ where: filters });
+  try {
+    logger.debug(`DB Query - Fetching companies from DB with filters: ${JSON.stringify(filters)}, skip: ${skip}, take: ${limitNumber}, sortBy: ${sortBy}, order: ${order}`);
+    const companies = await prisma.company.findMany({
+      where: filters,
+      orderBy: {
+        [sortBy as string]: order
+      },
+      skip,
+      take: limitNumber
+    });
 
-        return res.status(200).json({
-            message: "Companies fetched successfully",
-            companies,
-            meta: {
-                total,
-                page: Number(page),
-                limit: Number(limit),
-                totalPages: Math.ceil(total / Number(limit))
-            }
-        });
-    } catch(err) {
-        console.error(`Error fetching the list of companies `, err)
-        return res.status(500).json({
-            message: "Internal server error",
-            error: err instanceof Error ? err.message : "Unknown error"
-        })
-    }
+    logger.debug(`DB Result - Companies fetched: ${companies.length}`);
+
+    const total = await prisma.company.count({ where: filters });
+    logger.debug(`DB Result - Total companies count: ${total}`);
+
+    logger.info(`Companies fetched successfully for applicantId: ${applicantId}, page: ${pageNumber}, limit: ${limitNumber}`);
+
+    return res.status(200).json({
+      message: "Companies fetched successfully",
+      companies,
+      meta: {
+        total,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(total / limitNumber),
+        hasNextPage: skip + limitNumber < total,
+        hasPrevPage: pageNumber > 1
+      }
+    });
+  } catch (err) {
+    logger.error(`Error fetching companies for applicantId: ${applicantId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+    console.error(`Error fetching the list of companies `, err)
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err instanceof Error ? err.message : "Unknown error"
+    })
+  }
 })
 
 class GetCompanyJobsResponse {
@@ -230,47 +248,54 @@ Documentation.addRoute({
 })();
 
 router.get('/:id/jobs', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
-    const applicantId = req.user?.userId;
-    if(!applicantId){
-        return res.status(401).json({ message: "Unauthorized" })
+  const { id } = req.params;
+  const applicantId = req.user?.userId;
+  logger.info(`GET /:id/jobs - Fetching jobs for companyId: ${id}, applicantId: ${applicantId}, IP: ${req.ip}`);
+
+  if (!applicantId) {
+    logger.warn(`Unauthorized access attempt - Missing applicantId. IP: ${req.ip}`);
+    return res.status(401).json({ message: "Unauthorized" })
+  }
+
+  try {
+    logger.debug(`DB Query - Fetching jobs of a company with companyId: ${id}`);
+    const jobs = await prisma.job.findMany({
+      where: {
+        companyId: id
+      },
+      select: {
+        title: true,
+        skills: true,
+        minCTC: true,
+        maxCTC: true,
+        minExperience: true,
+        maxExperience: true,
+        employmentType: true,
+        jobType: true,
+        openings: true,
+        noticePeriod: true
+      }
+    })
+    if (!jobs) {
+      logger.warn(`Jobs for companyId: ${id} not found`);
+      return res.status(404).json({ message: "Jobs not found" });
     }
+    logger.debug(`DB Result - ${jobs.length} job(s) fetched for companyId: ${id}`);
 
-    const { id } = req.params;
+    logger.info(`Company and jobs fetched successfully for companyId: ${id}`);
 
-    try {
-        const company = await prisma.company.findUnique({
-            where: {
-                id
-            },
-            include: {
-                jobs: {
-                    select: {
-                        title: true,
-                        skills: true,
-                        minCTC: true,
-                        maxCTC: true,
-                        minExperience: true,
-                        maxExperience: true,
-                        employmentType: true,
-                        jobType: true,
-                        openings: true,
-                        noticePeriod: true
-                    }
-                }
-            }
-        })
-
-        return res.status(200).json({
-            message: "Company fetched successfully",
-            company
-        });
-    } catch(err) {
-        console.error(`Error fetching the company with id:${id} `, err)
-        return res.status(500).json({
-            message: "Internal server error",
-            error: err instanceof Error ? err.message : "Unknown error"
-        })
-    }
+    return res.status(200).json({
+      message: "Jobs fetched successfully",
+      jobs
+    });
+  } catch (err) {
+    logger.error(`Error fetching jobs for companyId: ${id} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
+    console.error(`Error fetching the company with id:${id} `, err)
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err instanceof Error ? err.message : "Unknown error"
+    })
+  }
 })
 
 class CompanyWithJobsResponse {
@@ -378,13 +403,16 @@ Documentation.addRoute({
 
 router.get('/:id/details', roleMiddleware("APPLICANT"), async (req: Request, res: Response) => {
   const applicantId = req.user?.userId;
-  if(!applicantId){
-      return res.status(401).json({ message: "Unauthorized" })
+  const companyId = req.params.id;
+  logger.info(`GET /:id/details - Fetching details for companyId: ${companyId}, applicantId: ${applicantId}, IP: ${req.ip}`);
+
+  if (!applicantId) {
+    logger.warn(`Unauthorized access attempt - Missing applicantId. IP: ${req.ip}`);
+    return res.status(401).json({ message: "Unauthorized" })
   }
 
-  const companyId = req.params.id;
-
   try {
+    logger.debug(`DB Query - Fetching details of a company with companyId: ${companyId}`);
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       include: {
@@ -409,14 +437,20 @@ router.get('/:id/details', roleMiddleware("APPLICANT"), async (req: Request, res
     });
 
     if (!company) {
+      logger.warn(`Company not found with companyId: ${companyId}`);
       return res.status(404).json({ message: "Company not found" });
     }
+
+    logger.debug(`DB Result - ${company} company fetched for companyId: ${companyId}`);
+
+    logger.info(`Company details fetched successfully for companyId: ${companyId}`);
 
     return res.status(200).json({
       message: "Company fetched successfully",
       company
     });
   } catch (err) {
+    logger.error(`Error fetching details of companyId: ${companyId} - ${err instanceof Error ? err.message : "Unknown error"} - IP: ${req.ip}`);
     console.error(`Error fetching company with id: ${companyId}`, err);
     return res.status(500).json({
       message: "Internal server error",

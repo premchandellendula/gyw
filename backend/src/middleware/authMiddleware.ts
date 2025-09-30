@@ -1,11 +1,13 @@
 import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from 'jsonwebtoken';
+import logger from "../utils/logger";
 
 function authMiddleware(req: Request, res: Response, next: NextFunction){    
     try {
         const token = req.cookies.token
     
         if(!token){
+            logger.warn(`Unauthorized access attempt: No token provided - ${req.method} ${req.originalUrl} - IP: ${req.ip}`);
             return res.status(401).json({
                 message: 'Unauthorized: No token provided' 
             })
@@ -23,12 +25,14 @@ function authMiddleware(req: Request, res: Response, next: NextFunction){
             };
             next();
         }else{
+            logger.warn(`Unauthorized access attempt: Invalid token payload - ${req.method} ${req.originalUrl} - IP: ${req.ip}`);
             res.status(401).json({
                 message: "Invalid token payload"
             })
             return;
         }
     } catch(err) {
+        logger.warn(`Unauthorized access attempt: Invalid token - ${req.method} ${req.originalUrl} - IP: ${req.ip} - Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
         return res.status(401).json({
             message: 'Unauthorized: Invalid token',
             error: err instanceof Error ? err.message : "Unknown error"
