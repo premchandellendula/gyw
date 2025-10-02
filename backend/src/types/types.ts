@@ -1,9 +1,10 @@
+import { Role } from '@prisma/client';
 import zod from 'zod';
 
-export enum Role {
-    RECRUITER,
-    APPLICANT
-}
+// export enum Role {
+//   RECRUITER,
+//   APPLICANT
+// }
 
 export const JobRolEnum = zod.enum([
   "FRONTEND_DEVELOPER",
@@ -66,3 +67,12 @@ export const DepartmentEnum = zod.enum([
   "ADMINISTRATION",
   "SECURITY",
 ])
+
+export type UserPayload = {
+  userId: string;
+  role: Role;
+  googleId?: string;
+  email?: string;
+  name?: string;
+  avatar?: string;
+};

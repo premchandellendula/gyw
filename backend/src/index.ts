@@ -6,6 +6,8 @@ import swaggerUi from 'swagger-ui-express';
 import { Documentation } from './docs/documentation';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
+import session from 'express-session';
+import passport from 'passport';
 
 const app = express()
 const port = process.env.PORT || 8000
