@@ -11,8 +11,9 @@ model User {
   id             String         @id @default(uuid()) @db.Uuid
   name           String
   email          String         @unique
-  password       String
+  password       String?
   role           Role           @default(APPLICANT)
+  googleId       String?        @unique
   phoneNumber    String?
   profilePicture String         @default("https://icon-library.com/images/anonymous-avatar-icon/anonymous-avatar-icon-25.jpg")
   isActive       Boolean        @default(false)

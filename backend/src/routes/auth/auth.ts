@@ -8,7 +8,30 @@ import authMiddleware from '../../middleware/authMiddleware';
 import { Documentation, Methods, SchemaObject } from '../../docs/documentation';
 import rateLimit from 'express-rate-limit';
 import logger from 'utils/logger';
+import passport from 'passport';
 const prisma = new PrismaClient();
+
+router.get('/google',
+    passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+router.get('/google/callback',
+    passport.authenticate('google', { failureRedirect: '/auth/failure' }),
+    (req, res) => {
+        res.redirect('/auth/success');
+    }
+);
+
+router.get('/success', (req, res) => {
+    res.json({
+        message: 'Login successful',
+        user: req.user,
+    });
+});
+
+router.get('/failure', (req, res) => {
+    res.status(401).json({ error: 'Authentication failed' });
+});
 
 const loginLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
@@ -246,11 +269,10 @@ router.post('/signin', async (req: Request, res: Response) => {
     logger.debug(`Signin attempt started for email: ${email}, IP: ${req.ip}`);
 
     try {
-        const user = await prisma.user.findFirst({
-            where: {
-                email: email
-            }
-        })
+        const user = await prisma.user.findUnique({
+            where: { email }
+        });
+
         logger.debug(`DB lookup result for ${email}: ${user ? 'User found' : 'User not found'}`);
 
         if(!user){
@@ -258,6 +280,10 @@ router.post('/signin', async (req: Request, res: Response) => {
             return res.status(404).json({
                 message: "User not found"
             });
+        }
+        if (!user.password) {
+            logger.warn(`Signin failed: Password login not supported: ${email} - IP: ${req.ip}`);
+            throw new Error("Password login not supported for this user.");
         }
 
         const isPasswordValid = await bcrypt.compare(password, user.password)
