@@ -1,10 +1,9 @@
-import ThemeButton from "./theme/ThemeButton";
+import Navbar from "@/components/navbar/Navbar";
 
 export default function Home() {
   return (
     <div>
-      <ThemeButton />
-      hehe
+      <Navbar />
     </div>
   );
 }
